@@ -164,6 +164,14 @@ class LocalWhisperTranscriber(BaseTranscriber):
             # Perform transcription with word-level timestamps
             transcribe_kwargs = {
                 "verbose": False,
+                # Prevents hallucination loops: each segment is decoded from audio alone
+                # rather than conditioning on (potentially hallucinated) prior segment text
+                "condition_on_previous_text": False,
+                # Reject segments whose output is absurdly repetitive within a single chunk
+                "compression_ratio_threshold": 2.4,
+                # Allow Whisper to correctly identify instrumental-only sections as silence
+                # rather than forcing transcription of music with no vocals
+                "no_speech_threshold": 0.6,
             }
 
             # Add language if specified

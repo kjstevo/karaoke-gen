@@ -59,9 +59,9 @@ class RunPodWhisperAPI:
                 "model": "medium",
                 "temperature": 0.2,
                 "best_of": 5,
-                "compression_ratio_threshold": 2.8,
-                "no_speech_threshold": 1,
-                "condition_on_previous_text": True,
+                "compression_ratio_threshold": 2.4,
+                "no_speech_threshold": 0.6,
+                "condition_on_previous_text": False,
                 "enable_vad": True,
             }
         }
