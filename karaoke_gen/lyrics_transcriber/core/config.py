@@ -14,10 +14,10 @@ class TranscriberConfig:
     # Local Whisper configuration - reads from environment variables with sensible defaults
     # Environment variables: WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_CACHE_DIR, WHISPER_LANGUAGE
     enable_local_whisper: bool = True  # Enabled by default as fallback
-    local_whisper_model_size: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL_SIZE", "medium"))
+    local_whisper_model_size: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL_SIZE", "large-v2"))
     local_whisper_device: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_DEVICE"))
-    local_whisper_cache_dir: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_CACHE_DIR"))
-    local_whisper_language: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_LANGUAGE"))
+    local_whisper_cache_dir: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_CACHE_DIR","/workspace/models"))
+    local_whisper_language: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_LANGUAGE", "en"))
 
 
 @dataclass
