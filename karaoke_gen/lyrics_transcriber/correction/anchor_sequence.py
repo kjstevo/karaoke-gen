@@ -886,6 +886,23 @@ class AnchorSequenceFinder:
             end_pos = len(ref_words)
         return ref_words[start_pos:end_pos]
 
+    def _build_ref_clean_to_obj_mapping(self, ref_words: Dict[str, List[Word]]) -> Dict[str, List[int]]:
+        """Build a mapping from clean-text word index to Word-object index for each source.
+
+        clean_text() splits hyphenated words (e.g. "God-damned" → "god damned"), producing
+        more clean tokens than Word objects. reference_positions stores clean-text indices,
+        but gap bounds must index into the Word-object list, so we need this translation.
+        """
+        mapping: Dict[str, List[int]] = {}
+        for source, words in ref_words.items():
+            word_map: List[int] = []
+            for obj_idx, word in enumerate(words):
+                clean_tokens = self._clean_text(word.text).split()
+                for _ in clean_tokens:
+                    word_map.append(obj_idx)
+            mapping[source] = word_map
+        return mapping
+
     def find_gaps(
         self,
         transcribed: str,
@@ -906,6 +923,10 @@ class AnchorSequenceFinder:
         }
         ref_words = {source: [w for s in lyrics.segments for w in s.words] for source, lyrics in references.items()}
 
+        # Build mapping from clean-text positions to Word-object positions (needed because
+        # clean_text() can split hyphenated words, making the two index spaces diverge)
+        ref_clean_to_obj = self._build_ref_clean_to_obj_mapping(ref_words)
+
         # Create gaps with Word IDs
         gaps = []
         sorted_anchors = sorted(anchors, key=lambda x: x.anchor.transcription_position)
@@ -924,6 +945,7 @@ class AnchorSequenceFinder:
                     ref_texts_clean=ref_texts_clean,
                     ref_words=ref_words,
                     following_anchor=first_anchor,
+                    ref_clean_to_obj=ref_clean_to_obj,
                 ):
                     gaps.append(gap)
 
@@ -946,6 +968,7 @@ class AnchorSequenceFinder:
                     ref_words=ref_words,
                     preceding_anchor=current_anchor,
                     following_anchor=next_anchor,
+                    ref_clean_to_obj=ref_clean_to_obj,
                 ):
                     gaps.append(between_gap)
 
@@ -963,6 +986,7 @@ class AnchorSequenceFinder:
                     ref_texts_clean=ref_texts_clean,
                     ref_words=ref_words,
                     preceding_anchor=last_anchor,
+                    ref_clean_to_obj=ref_clean_to_obj,
                 ):
                     gaps.append(final_gap)
 
@@ -977,6 +1001,7 @@ class AnchorSequenceFinder:
         ref_texts_clean: Dict[str, List[str]],
         ref_words: Dict[str, List[Word]],
         following_anchor: AnchorSequence,
+        ref_clean_to_obj: Dict[str, List[int]],
     ) -> Optional[GapSequence]:
         """Create gap sequence before the first anchor.
 
@@ -990,7 +1015,9 @@ class AnchorSequenceFinder:
                 if source in ref_texts_clean:
                     # Get the position where the following anchor starts in this source
                     if source in following_anchor.reference_positions:
-                        end_pos = following_anchor.reference_positions[source]
+                        end_clean = following_anchor.reference_positions[source]
+                        obj_map = ref_clean_to_obj.get(source, [])
+                        end_pos = obj_map[end_clean] if end_clean < len(obj_map) else len(words)
                         # Include all words from start up to the anchor
                         reference_word_ids[source] = [w.id for w in words[:end_pos]]
                     else:
@@ -1019,6 +1046,7 @@ class AnchorSequenceFinder:
         ref_words: Dict[str, List[Word]],
         preceding_anchor: AnchorSequence,
         following_anchor: AnchorSequence,
+        ref_clean_to_obj: Dict[str, List[int]],
     ) -> Optional[GapSequence]:
         """Create gap sequence between two anchors.
 
@@ -1031,8 +1059,11 @@ class AnchorSequenceFinder:
             if source in ref_texts_clean:
                 # Only process sources that contain both anchors
                 if source in preceding_anchor.reference_positions and source in following_anchor.reference_positions:
-                    start_pos = preceding_anchor.reference_positions[source] + len(preceding_anchor.reference_word_ids[source])
-                    end_pos = following_anchor.reference_positions[source]
+                    obj_map = ref_clean_to_obj.get(source, [])
+                    anchor_clean_end = preceding_anchor.reference_positions[source] + len(preceding_anchor.reference_word_ids[source])
+                    start_pos = obj_map[anchor_clean_end] if anchor_clean_end < len(obj_map) else len(words)
+                    end_clean = following_anchor.reference_positions[source]
+                    end_pos = obj_map[end_clean] if end_clean < len(obj_map) else len(words)
                     # Include all words between the anchors
                     reference_word_ids[source] = [w.id for w in words[start_pos:end_pos]]
                 else:
@@ -1058,6 +1089,7 @@ class AnchorSequenceFinder:
         ref_texts_clean: Dict[str, List[str]],
         ref_words: Dict[str, List[Word]],
         preceding_anchor: AnchorSequence,
+        ref_clean_to_obj: Dict[str, List[int]],
     ) -> Optional[GapSequence]:
         """Create gap sequence after the last anchor.
 
@@ -1069,7 +1101,9 @@ class AnchorSequenceFinder:
         for source, words in ref_words.items():
             if source in ref_texts_clean:
                 if source in preceding_anchor.reference_positions:
-                    start_pos = preceding_anchor.reference_positions[source] + len(preceding_anchor.reference_word_ids[source])
+                    obj_map = ref_clean_to_obj.get(source, [])
+                    anchor_clean_end = preceding_anchor.reference_positions[source] + len(preceding_anchor.reference_word_ids[source])
+                    start_pos = obj_map[anchor_clean_end] if anchor_clean_end < len(obj_map) else len(words)
                     # Include all words from end of last anchor to end of reference
                     reference_word_ids[source] = [w.id for w in words[start_pos:]]
                 else:
