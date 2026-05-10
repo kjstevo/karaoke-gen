@@ -382,6 +382,10 @@ async def async_main():
     except ValueError:
         sys.exit(1)
 
+    # Parse --enabled_handlers comma-separated string into a list
+    if getattr(args, 'enabled_handlers', None):
+        args.enabled_handlers = [h.strip() for h in args.enabled_handlers.split(',') if h.strip()]
+
     # Auto-detect style.json in the current working directory when no style or theme is specified
     if not args.style_params_json and not getattr(args, 'theme', None):
         cwd_style = os.path.join(os.getcwd(), 'style.json')

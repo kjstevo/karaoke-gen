@@ -241,16 +241,14 @@ def create_parser(prog: str = "karaoke-gen") -> argparse.ArgumentParser:
     )
     lyrics_group.add_argument(
         "--enabled_handlers",
-        nargs="+",
-        metavar="HANDLER",
         help=(
-            "Optional: Specify which correction handlers to enable. "
-            "Defaults to: ExtendAnchorHandler WordCountMatchHandler SyllablesMatchHandler "
-            "RelaxedWordCountMatchHandler NoSpacePunctuationMatchHandler. "
-            "Available handlers: ExtendAnchorHandler, WordCountMatchHandler, SyllablesMatchHandler, "
+            "Optional: Comma-separated list of correction handlers to enable. "
+            "Defaults to: ExtendAnchorHandler,WordCountMatchHandler,SyllablesMatchHandler,"
+            "RelaxedWordCountMatchHandler,NoSpacePunctuationMatchHandler. "
+            "Available: ExtendAnchorHandler, WordCountMatchHandler, SyllablesMatchHandler, "
             "RelaxedWordCountMatchHandler, NoSpacePunctuationMatchHandler, RepeatCorrectionHandler, "
             "SoundAlikeHandler, LevenshteinHandler, FallbackReferenceHandler. "
-            "Example: --enabled_handlers WordCountMatchHandler SyllablesMatchHandler FallbackReferenceHandler"
+            "Example: --enabled_handlers WordCountMatchHandler,SyllablesMatchHandler,FallbackReferenceHandler"
         ),
     )
 
