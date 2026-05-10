@@ -239,6 +239,20 @@ def create_parser(prog: str = "karaoke-gen") -> argparse.ArgumentParser:
         action="store_true",
         help="Optional: Skip the review step after transcription. Example: --skip_transcription_review",
     )
+    lyrics_group.add_argument(
+        "--enabled_handlers",
+        nargs="+",
+        metavar="HANDLER",
+        help=(
+            "Optional: Specify which correction handlers to enable. "
+            "Defaults to: ExtendAnchorHandler WordCountMatchHandler SyllablesMatchHandler "
+            "RelaxedWordCountMatchHandler NoSpacePunctuationMatchHandler. "
+            "Available handlers: ExtendAnchorHandler, WordCountMatchHandler, SyllablesMatchHandler, "
+            "RelaxedWordCountMatchHandler, NoSpacePunctuationMatchHandler, RepeatCorrectionHandler, "
+            "SoundAlikeHandler, LevenshteinHandler, FallbackReferenceHandler. "
+            "Example: --enabled_handlers WordCountMatchHandler SyllablesMatchHandler FallbackReferenceHandler"
+        ),
+    )
 
     # Style Configuration
     style_group = parser.add_argument_group("Style Configuration")

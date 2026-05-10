@@ -16,7 +16,8 @@ class LyricsProcessor:
     COUNTDOWN_PADDING_SECONDS = 3.0
     
     def __init__(
-        self, logger, style_params_json, lyrics_file, skip_transcription, skip_transcription_review, render_video, subtitle_offset_ms
+        self, logger, style_params_json, lyrics_file, skip_transcription, skip_transcription_review, render_video, subtitle_offset_ms,
+        enabled_handlers=None,
     ):
         self.logger = logger
         self.style_params_json = style_params_json
@@ -25,6 +26,7 @@ class LyricsProcessor:
         self.skip_transcription_review = skip_transcription_review
         self.render_video = render_video
         self.subtitle_offset_ms = subtitle_offset_ms
+        self.enabled_handlers = enabled_handlers
 
     def _detect_countdown_padding_from_lrc(self, lrc_filepath):
         """
@@ -419,6 +421,7 @@ class LyricsProcessor:
             enable_review=not self.skip_transcription_review,  # Honor the caller's setting
             subtitle_offset_ms=self.subtitle_offset_ms,
             add_countdown=False,  # Always defer - caller handles countdown after review
+            enabled_handlers=self.enabled_handlers,
         )
 
         # Add this log entry to debug the OutputConfig

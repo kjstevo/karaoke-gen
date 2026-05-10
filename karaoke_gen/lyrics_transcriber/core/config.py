@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -63,3 +63,6 @@ class OutputConfig:
 
     # Duet mode: render two-singer layout in subtitles
     is_duet: bool = False
+
+    # Correction handlers to enable. None means use the corrector's built-in defaults.
+    enabled_handlers: Optional[List[str]] = None

@@ -6,6 +6,7 @@ import os
 import shortuuid
 import time
 
+from karaoke_gen.lyrics_transcriber.correction.handlers.fallback_reference import FallbackReferenceHandler
 from karaoke_gen.lyrics_transcriber.correction.handlers.levenshtein import LevenshteinHandler
 from karaoke_gen.lyrics_transcriber.correction.handlers.no_space_punct_match import NoSpacePunctuationMatchHandler
 from karaoke_gen.lyrics_transcriber.correction.handlers.relaxed_word_count_match import RelaxedWordCountMatchHandler
@@ -48,7 +49,7 @@ class LyricsCorrector:
         self._anchor_finder = anchor_finder
         self._cache_dir = Path(cache_dir)
 
-        # Define default enabled handlers - excluding LLM, Repeat, SoundAlike, and Levenshtein
+        # Define default enabled handlers - excluding LLM, Repeat, SoundAlike, Levenshtein, and Fallback
         DEFAULT_ENABLED_HANDLERS = [
             "ExtendAnchorHandler",
             "WordCountMatchHandler",
@@ -68,6 +69,7 @@ class LyricsCorrector:
             ("RepeatCorrectionHandler", RepeatCorrectionHandler(logger=self.logger)),
             ("SoundAlikeHandler", SoundAlikeHandler(logger=self.logger)),
             ("LevenshteinHandler", LevenshteinHandler(logger=self.logger)),
+            ("FallbackReferenceHandler", FallbackReferenceHandler(logger=self.logger)),
         ]
 
         # Store all handler information

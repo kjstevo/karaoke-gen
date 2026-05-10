@@ -125,7 +125,11 @@ class LyricsTranscriber:
         # Initialize components (with dependency injection)
         self.transcribers = transcribers or self._initialize_transcribers()
         self.lyrics_providers = lyrics_providers or self._initialize_lyrics_providers()
-        self.corrector = corrector or LyricsCorrector(cache_dir=self.output_config.cache_dir, logger=self.logger)
+        self.corrector = corrector or LyricsCorrector(
+            cache_dir=self.output_config.cache_dir,
+            enabled_handlers=self.output_config.enabled_handlers,
+            logger=self.logger,
+        )
         self.output_generator = output_generator or self._initialize_output_generator()
 
         # Log enabled features
