@@ -382,6 +382,12 @@ async def async_main():
     except ValueError:
         sys.exit(1)
 
+    # Auto-detect style.json in the current working directory when no style or theme is specified
+    if not args.style_params_json and not getattr(args, 'theme', None):
+        cwd_style = os.path.join(os.getcwd(), 'style.json')
+        if os.path.exists(cwd_style):
+            args.style_params_json = cwd_style
+
     # Handle --list-themes flag
     if args.list_themes:
         from backend.services.theme_service import ThemeService
