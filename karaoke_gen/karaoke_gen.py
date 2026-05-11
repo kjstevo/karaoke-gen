@@ -570,152 +570,79 @@ class KaraokePrep:
                 lyrics_artist = self.lyrics_artist or self.artist
                 lyrics_title = self.lyrics_title or self.title
 
-                # Create futures for both operations
-                transcription_future = None
-                separation_future = None
+                self.logger.info("=== Starting Sequential Processing ===")
 
-                self.logger.info("=== Starting Parallel Processing ===")
+                # Step 1: Audio separation (must complete before transcription so Whisper
+                # gets the isolated vocals stem instead of the mixed audio, and to avoid
+                # simultaneous CUDA context conflicts between onnxruntime and PyTorch).
+                transcription_audio = processed_track["input_audio_wav"]
 
-                if not self.skip_lyrics:
-                    self.logger.info("Creating transcription future...")
-                    # Run transcription in a separate thread
-                    transcription_future = asyncio.create_task(
-                        asyncio.to_thread(
-                            # Delegate to LyricsProcessor - pass original artist/title for filenames, lyrics_artist/lyrics_title for processing
-                            self.lyrics_processor.transcribe_lyrics, 
-                            processed_track["input_audio_wav"], 
-                            self.artist,  # Original artist for filename generation
-                            self.title,   # Original title for filename generation  
-                            track_output_dir,
-                            lyrics_artist,  # Lyrics artist for processing
-                            lyrics_title    # Lyrics title for processing
-                        )
-                    )
-                    self.logger.info(f"Transcription future created, type: {type(transcription_future)}")
-
-                # Default to a placeholder task if separation won't run
-                separation_future = asyncio.create_task(asyncio.sleep(0))
-
-                # Only create real separation future if not skipping AND no existing instrumental provided
                 if not self.skip_separation and not self.existing_instrumental:
-                    self.logger.info("Creating separation future (not skipping and no existing instrumental)...")
-                    # Run separation in a separate thread
-                    separation_future = asyncio.create_task(
-                        asyncio.to_thread(
-                            # Delegate to AudioProcessor
+                    self.logger.info("Step 1: Running audio separation...")
+                    try:
+                        separation_results = await asyncio.to_thread(
                             self.audio_processor.process_audio_separation,
                             audio_file=processed_track["input_audio_wav"],
                             artist_title=artist_title,
                             track_output_dir=track_output_dir,
                         )
-                    )
-                    self.logger.info(f"Separation future created, type: {type(separation_future)}")
+                        if isinstance(separation_results, dict):
+                            processed_track["separated_audio"] = separation_results
+                            vocals_path = separation_results.get("clean_instrumental", {}).get("vocals")
+                            if vocals_path:
+                                self.logger.info(f"Using separated vocals stem for transcription: {vocals_path}")
+                                transcription_audio = vocals_path
+                            else:
+                                self.logger.warning("Separation completed but no vocals path found; falling back to mixed audio for transcription.")
+                        else:
+                            self.logger.warning(f"Unexpected separation result type: {type(separation_results)}; falling back to mixed audio.")
+                    except Exception as e:
+                        self.logger.error(f"Error during audio separation: {e}")
+                        self.logger.exception("Full traceback:")
+                        raise
                 elif self.existing_instrumental:
-                     self.logger.info(f"Skipping separation future creation because existing instrumental was provided: {self.existing_instrumental}")
-                elif self.skip_separation: # Check this condition explicitly for clarity
-                     self.logger.info("Skipping separation future creation because skip_separation is True.")
-
-                self.logger.info("About to await both operations with asyncio.gather...")
-                # Wait for both operations to complete
-                try:
-                    results = await asyncio.gather(
-                        transcription_future if transcription_future else asyncio.sleep(0), # Use placeholder if None
-                        separation_future, # Already defaults to placeholder if not created
-                        return_exceptions=True,
-                    )
-                except asyncio.CancelledError:
-                    self.logger.info("Received cancellation request, cleaning up...")
-                    # Cancel any running futures
-                    if transcription_future and not transcription_future.done():
-                        transcription_future.cancel()
-                    if separation_future and not separation_future.done() and not isinstance(separation_future, asyncio.Task): # Check if it's a real task
-                         # Don't try to cancel the asyncio.sleep(0) placeholder
-                         separation_future.cancel()
-
-                    # Wait for futures to complete cancellation
-                    await asyncio.gather(
-                        transcription_future if transcription_future else asyncio.sleep(0),
-                        separation_future if separation_future else asyncio.sleep(0), # Use placeholder if None/Placeholder
-                        return_exceptions=True,
-                    )
-                    raise
-
-                # Handle transcription results
-                if transcription_future:
-                    self.logger.info("Processing transcription results...")
-                    try:
-                        # Index 0 corresponds to transcription_future in gather
-                        transcriber_outputs = results[0]
-                        # Check if the result is an exception or the actual output
-                        if isinstance(transcriber_outputs, Exception):
-                            self.logger.error(f"Error during lyrics transcription: {transcriber_outputs}")
-                            # Optionally log traceback: self.logger.exception("Transcription error:")
-                            raise transcriber_outputs  # Re-raise the exception
-                        elif transcriber_outputs is not None and not isinstance(transcriber_outputs, asyncio.futures.Future): # Ensure it's not the placeholder future
-                            self.logger.info(f"Successfully received transcription outputs: {type(transcriber_outputs)}")
-                            # Ensure transcriber_outputs is a dictionary before calling .get()
-                            if isinstance(transcriber_outputs, dict):
-                                self.lyrics = transcriber_outputs.get("corrected_lyrics_text")
-                                processed_track["lyrics"] = transcriber_outputs.get("corrected_lyrics_text_filepath")
-                                
-                                # Capture countdown padding information
-                                processed_track["countdown_padding_added"] = transcriber_outputs.get("countdown_padding_added", False)
-                                processed_track["countdown_padding_seconds"] = transcriber_outputs.get("countdown_padding_seconds", 0.0)
-                                processed_track["padded_vocals_audio"] = transcriber_outputs.get("padded_audio_filepath")
-                                
-                                # Store ASS filepath for video background processing
-                                processed_track["ass_filepath"] = transcriber_outputs.get("ass_filepath")
-                                
-                                if processed_track["countdown_padding_added"]:
-                                    self.logger.info(
-                                        f"=== COUNTDOWN PADDING DETECTED ==="
-                                    )
-                                    self.logger.info(
-                                        f"Vocals have been padded with {processed_track['countdown_padding_seconds']}s of silence. "
-                                        f"Instrumental tracks will be padded after separation to maintain synchronization."
-                                    )
-                            else:
-                                self.logger.warning(f"Unexpected type for transcriber_outputs: {type(transcriber_outputs)}, value: {transcriber_outputs}")
-                        else:
-                             self.logger.info("Transcription task did not return results (possibly skipped or placeholder).")
-                    except Exception as e:
-                        self.logger.error(f"Error processing transcription results: {e}")
-                        self.logger.exception("Full traceback:")
-                        raise # Re-raise the exception
-
-                # Handle separation results only if a real future was created and ran
-                # Check if separation_future was the placeholder or a real task
-                # The result index in `results` depends on whether transcription_future existed
-                separation_result_index = 1 if transcription_future else 0
-                if separation_future is not None and isinstance(separation_future, asyncio.Task) and len(results) > separation_result_index:
-                    self.logger.info("Processing separation results...")
-                    try:
-                        separation_results = results[separation_result_index]
-                         # Check if the result is an exception or the actual output
-                        if isinstance(separation_results, Exception):
-                            self.logger.error(f"Error during audio separation: {separation_results}")
-                             # Optionally log traceback: self.logger.exception("Separation error:")
-                            # Decide if you want to raise here or just log
-                        elif separation_results is not None and not isinstance(separation_results, asyncio.futures.Future): # Ensure it's not the placeholder future
-                            self.logger.info(f"Successfully received separation results: {type(separation_results)}")
-                            if isinstance(separation_results, dict):
-                                processed_track["separated_audio"] = separation_results
-                            else:
-                                 self.logger.warning(f"Unexpected type for separation_results: {type(separation_results)}, value: {separation_results}")
-                        else:
-                            self.logger.info("Separation task did not return results (possibly skipped or placeholder).")
-                    except Exception as e:
-                        self.logger.error(f"Error processing separation results: {e}")
-                        self.logger.exception("Full traceback:")
-                        # Decide if you want to raise here or just log
-                elif not self.skip_separation and not self.existing_instrumental:
-                    # This case means separation was supposed to run but didn't return results properly
-                    self.logger.warning("Separation task was expected but did not yield results or resulted in an error captured earlier.")
+                    self.logger.info(f"Skipping separation: existing instrumental provided: {self.existing_instrumental}")
                 else:
-                    # This case means separation was intentionally skipped
-                    self.logger.info("Skipping processing of separation results as separation was not run.")
+                    self.logger.info("Skipping separation: skip_separation is True.")
 
-                self.logger.info("=== Parallel Processing Complete ===")
+                # Step 2: Lyrics transcription on the vocals stem (or mixed audio fallback).
+                if not self.skip_lyrics:
+                    self.logger.info(f"Step 2: Running transcription on: {transcription_audio}")
+                    try:
+                        transcriber_outputs = await asyncio.to_thread(
+                            self.lyrics_processor.transcribe_lyrics,
+                            transcription_audio,
+                            self.artist,
+                            self.title,
+                            track_output_dir,
+                            lyrics_artist,
+                            lyrics_title,
+                        )
+                        if isinstance(transcriber_outputs, Exception):
+                            raise transcriber_outputs
+                        if isinstance(transcriber_outputs, dict):
+                            self.lyrics = transcriber_outputs.get("corrected_lyrics_text")
+                            processed_track["lyrics"] = transcriber_outputs.get("corrected_lyrics_text_filepath")
+                            processed_track["countdown_padding_added"] = transcriber_outputs.get("countdown_padding_added", False)
+                            processed_track["countdown_padding_seconds"] = transcriber_outputs.get("countdown_padding_seconds", 0.0)
+                            processed_track["padded_vocals_audio"] = transcriber_outputs.get("padded_audio_filepath")
+                            processed_track["ass_filepath"] = transcriber_outputs.get("ass_filepath")
+                            if processed_track["countdown_padding_added"]:
+                                self.logger.info(
+                                    f"=== COUNTDOWN PADDING DETECTED ==="
+                                )
+                                self.logger.info(
+                                    f"Vocals have been padded with {processed_track['countdown_padding_seconds']}s of silence. "
+                                    f"Instrumental tracks will be padded after separation to maintain synchronization."
+                                )
+                        else:
+                            self.logger.warning(f"Unexpected transcription result type: {type(transcriber_outputs)}")
+                    except Exception as e:
+                        self.logger.error(f"Error during lyrics transcription: {e}")
+                        self.logger.exception("Full traceback:")
+                        raise
+
+                self.logger.info("=== Sequential Processing Complete ===")
 
             # === POST-TRANSCRIPTION: Add countdown and render video ===
             # Since lyrics_processor.py now always defers countdown and video rendering,
