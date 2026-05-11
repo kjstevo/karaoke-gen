@@ -674,6 +674,7 @@ class LyricsCorrector:
                 raise RuntimeError(f"Agentic AI correction failed for {len(errors)} gaps: {'; '.join(errors)}")
 
             # Apply corrections sequentially (must be in order due to segment modifications)
+            agentic_corrected_gaps = set()
             for result in results:
                 if result is None:
                     continue  # Skipped due to deadline
@@ -686,6 +687,7 @@ class LyricsCorrector:
 
                 if _agentic_corrections:
                     self.logger.info(f"🤖 Applying {len(_agentic_corrections)} agentic corrections for gap {i}")
+                    agentic_corrected_gaps.add(i)
                     affected_word_ids = [w.id for w in self._get_affected_words(gap, segments)]
                     affected_segment_ids = [s.id for s in self._get_affected_segments(gap, segments)]
                     updated_segments = self._apply_corrections_to_segments(self._get_affected_segments(gap, segments), _agentic_corrections)
@@ -714,6 +716,53 @@ class LyricsCorrector:
                         )
                 else:
                     self.logger.debug(f"🤖 No agentic corrections needed for gap {i}")
+
+            # Post-agentic fallback: run FallbackReferenceHandler on gaps the LLM missed.
+            # This catches word-count-matching errors (e.g. "Cold" -> "Code") that the LLM
+            # left uncorrected, without risking double-correction of gaps it already fixed.
+            fallback_handler = FallbackReferenceHandler(logger=self.logger)
+            uncorrected_count = 0
+            for result in results:
+                if result is None or result['index'] in agentic_corrected_gaps:
+                    continue
+                gap = result['gap']
+                i = result['index']
+                can_handle, handler_data = fallback_handler.can_handle(gap, base_handler_data)
+                if not can_handle:
+                    continue
+                handler_data = {**base_handler_data, **handler_data}
+                corrections = fallback_handler.handle(gap, handler_data)
+                if not corrections:
+                    continue
+                uncorrected_count += len(corrections)
+                self.logger.info(f"Post-agentic fallback: FallbackReferenceHandler made {len(corrections)} corrections for gap {i}")
+                affected_word_ids = [w.id for w in self._get_affected_words(gap, segments)]
+                affected_segment_ids = [s.id for s in self._get_affected_segments(gap, segments)]
+                updated_segments = self._apply_corrections_to_segments(self._get_affected_segments(gap, segments), corrections)
+                for correction in corrections:
+                    if correction.word_id and correction.corrected_word_id:
+                        word_id_map[correction.word_id] = correction.corrected_word_id
+                for old_seg, new_seg in zip(self._get_affected_segments(gap, segments), updated_segments):
+                    segment_id_map[old_seg.id] = new_seg.id
+                step = CorrectionStep(
+                    handler_name="FallbackReferenceHandler",
+                    affected_word_ids=affected_word_ids,
+                    affected_segment_ids=affected_segment_ids,
+                    corrections=corrections,
+                    segments_before=self._get_affected_segments(gap, segments),
+                    segments_after=updated_segments,
+                    created_word_ids=[w.id for w in self._get_new_words(updated_segments, affected_word_ids)],
+                    deleted_word_ids=[id for id in affected_word_ids if not self._word_exists(id, updated_segments)],
+                )
+                correction_steps.append(step)
+                all_corrections.extend(corrections)
+                for correction in corrections:
+                    self.logger.info(
+                        f"Post-agentic fallback: '{correction.original_word}' -> '{correction.corrected_word}' "
+                        f"(confidence: {correction.confidence:.2f})"
+                    )
+            if uncorrected_count:
+                self.logger.info(f"Post-agentic fallback: {uncorrected_count} total corrections from FallbackReferenceHandler")
 
         # RULE-BASED MODE: Process gaps sequentially
         for i, gap in enumerate(gap_sequences, 1):
