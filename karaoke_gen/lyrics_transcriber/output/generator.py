@@ -115,9 +115,12 @@ class OutputGenerator:
                         self.config.styles["karaoke"]["font_size"] = self.font_size
                         self.logger.info(f"Preview mode: Scaled down font_size to: {self.font_size}")
 
-        # Get max_line_length from styles if available, otherwise use config default
-        max_line_length = self.config.styles.get("karaoke", {}).get("max_line_length", self.config.default_max_line_length)
-        self.logger.info(f"Using max_line_length: {max_line_length}")
+        # Compute max_line_length from actual font metrics; cap with any explicitly configured value
+        configured_max = self.config.styles.get("karaoke", {}).get("max_line_length", self.config.default_max_line_length)
+        font_path = self.config.styles.get("karaoke", {}).get("font_path", "")
+        pixel_based_max = self._compute_max_line_length(font_path, self.font_size, self.video_resolution_num[0])
+        max_line_length = min(configured_max, pixel_based_max)
+        self.logger.info(f"Using max_line_length: {max_line_length} (configured: {configured_max}, pixel-based: {pixel_based_max})")
         self.segment_resizer = SegmentResizer(max_line_length=max_line_length, logger=self.logger)
 
         if self.config.render_video:
@@ -230,6 +233,53 @@ class OutputGenerator:
     def _get_output_path(self, output_prefix: str, extension: str) -> str:
         """Generate full output path for a file."""
         return os.path.join(self.config.output_dir or self.config.cache_dir, f"{output_prefix}.{extension}")
+
+    def _compute_max_line_length(self, font_path: str, font_size: int, screen_width: int) -> int:
+        """Return the max line length in characters that fits within screen_width at the given font size.
+
+        Uses PIL to measure actual average character width when a font file is available;
+        falls back to a proportional-font heuristic (~60% of cap height per character) otherwise.
+        The same ASS_FONT_SCALE=0.70 applied in LyricsLine._get_font() is used here so that
+        the measurement reflects how ASS actually renders text.
+        """
+        ASS_FONT_SCALE = 0.70
+        SCREEN_USABLE = 0.90  # leave 5% margin on each side
+        adjusted_size = int(font_size * ASS_FONT_SCALE)
+        usable_width = screen_width * SCREEN_USABLE
+
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+
+            font = None
+            if font_path and os.path.exists(font_path):
+                try:
+                    font = ImageFont.truetype(font_path, size=adjusted_size)
+                except (OSError, AttributeError):
+                    pass
+
+            if font is not None:
+                sample = "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                img = Image.new("RGB", (20000, adjusted_size * 3), color="black")
+                draw = ImageDraw.Draw(img)
+                bbox = draw.textbbox((0, 0), sample, font=font)
+                avg_char_width = (bbox[2] - bbox[0]) / len(sample)
+                max_chars = int(usable_width / avg_char_width)
+                self.logger.info(
+                    f"Pixel-based max_line_length={max_chars} "
+                    f"(font_size={font_size}, screen_width={screen_width}, avg_char_width={avg_char_width:.1f}px)"
+                )
+                return max_chars
+        except Exception as e:
+            self.logger.debug(f"PIL font measurement failed: {e}")
+
+        # Fallback: proportional fonts average roughly 60% of the adjusted cap height per character
+        avg_char_width = adjusted_size * 0.60
+        max_chars = int(usable_width / avg_char_width)
+        self.logger.info(
+            f"Heuristic max_line_length={max_chars} "
+            f"(font_size={font_size}, screen_width={screen_width}, estimated avg_char_width={avg_char_width:.1f}px)"
+        )
+        return max_chars
 
     def _get_video_params(self, resolution: str) -> tuple:
         """Get video parameters: (width, height), font_size, line_height based on video resolution config."""
