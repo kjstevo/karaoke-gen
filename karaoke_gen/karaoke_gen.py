@@ -8,7 +8,7 @@ import shutil
 import asyncio
 import signal
 import time
-import fcntl
+import winfcntl
 import errno
 import psutil
 from datetime import datetime

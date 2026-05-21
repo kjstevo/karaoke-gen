@@ -50,6 +50,7 @@ class KaraokeFinalise:
         selected_instrumental_file=None,  # Add support for pre-selected instrumental file
         countdown_padding_seconds=None,  # Padding applied to vocals; instrumental must match
         no_video=False,  # Skip video encoding and distribution
+        make_one_video=False,  # Output only the lossless 4K MP4, skip lossy/MKV/720p variants
         is_duet=False,  # Multi-singer / duet rendering for CDG
         duet_corrections_json_path=None,  # Local path to corrections JSON with per-segment singer tags
     ):
@@ -115,6 +116,7 @@ class KaraokeFinalise:
         self.selected_instrumental_file = selected_instrumental_file
         self.countdown_padding_seconds = countdown_padding_seconds
         self.no_video = no_video
+        self.make_one_video = make_one_video
         self.is_duet = is_duet
         self.duet_corrections_json_path = duet_corrections_json_path
 
@@ -967,10 +969,18 @@ class KaraokeFinalise:
         return env_mov_input, ffmpeg_filter
 
     def remux_and_encode_output_video_files(self, with_vocals_file, input_files, output_files):
-        self.logger.info(f"Remuxing and encoding output video files (4 formats, ~15-20 minutes total)...")
+        if self.make_one_video:
+            total_steps = 3
+            self.logger.info(f"Remuxing and encoding output video files (lossless 4K MP4 only, ~5 minutes)...")
+        else:
+            total_steps = 6
+            self.logger.info(f"Remuxing and encoding output video files (4 formats, ~15-20 minutes total)...")
 
         # Check if output files already exist
-        if os.path.isfile(output_files["final_karaoke_lossless_mp4"]) and os.path.isfile(output_files["final_karaoke_lossless_mkv"]):
+        existing_check_files = [output_files["final_karaoke_lossless_mp4"]]
+        if not self.make_one_video:
+            existing_check_files.append(output_files["final_karaoke_lossless_mkv"])
+        if all(os.path.isfile(f) for f in existing_check_files):
             if not self.prompt_user_bool(
                 f"Found existing Final Karaoke output files. Overwrite (y) or skip (n)?",
             ):
@@ -978,12 +988,12 @@ class KaraokeFinalise:
                 return
 
         # Create karaoke version with instrumental audio
-        self.logger.info(f"[Step 1/6] Remuxing video with instrumental audio...")
+        self.logger.info(f"[Step 1/{total_steps}] Remuxing video with instrumental audio...")
         self.remux_with_instrumental(with_vocals_file, input_files["instrumental_audio"], output_files["karaoke_mp4"])
 
         # Convert the with vocals video to MP4 if needed
         if not with_vocals_file.endswith(".mp4"):
-            self.logger.info(f"[Step 2/6] Converting karaoke video to MP4...")
+            self.logger.info(f"[Step 2/{total_steps}] Converting karaoke video to MP4...")
             self.convert_mov_to_mp4(with_vocals_file, output_files["with_vocals_mp4"])
 
             # Delete the with vocals mov after successfully converting it to mp4
@@ -991,7 +1001,7 @@ class KaraokeFinalise:
                 self.logger.info(f"Deleting with vocals MOV file: {with_vocals_file}")
                 os.remove(with_vocals_file)
         else:
-            self.logger.info(f"[Step 2/6] Skipped - video already in MP4 format")
+            self.logger.info(f"[Step 2/{total_steps}] Skipped - video already in MP4 format")
 
         # Quote file paths to handle special characters
         title_mov_file = shlex.quote(os.path.abspath(input_files["title_mov"]))
@@ -1000,34 +1010,43 @@ class KaraokeFinalise:
         # Prepare concat filter for combining videos
         env_mov_input, ffmpeg_filter = self.prepare_concat_filter(input_files)
 
-        # Create all output versions with progress logging
-        self.logger.info(f"[Step 3/6] Encoding lossless 4K MP4 (title + karaoke + end, ~5 minutes)...")
+        self.logger.info(f"[Step 3/{total_steps}] Encoding lossless 4K MP4 (title + karaoke + end, ~5 minutes)...")
         self.encode_lossless_mp4(title_mov_file, karaoke_mp4_file, env_mov_input, ffmpeg_filter, output_files["final_karaoke_lossless_mp4"])
-        
-        self.logger.info(f"[Step 4/6] Encoding lossy 4K MP4 with AAC audio (~1 minute)...")
-        self.encode_lossy_mp4(output_files["final_karaoke_lossless_mp4"], output_files["final_karaoke_lossy_mp4"])
-        
-        self.logger.info(f"[Step 5/6] Creating MKV with FLAC audio for YouTube (~1 minute)...")
-        self.encode_lossless_mkv(output_files["final_karaoke_lossless_mp4"], output_files["final_karaoke_lossless_mkv"])
-        
-        self.logger.info(f"[Step 6/6] Encoding 720p version (~3 minutes)...")
-        self.encode_720p_version(output_files["final_karaoke_lossless_mp4"], output_files["final_karaoke_lossy_720p_mp4"])
+
+        if not self.make_one_video:
+            self.logger.info(f"[Step 4/{total_steps}] Encoding lossy 4K MP4 with AAC audio (~1 minute)...")
+            self.encode_lossy_mp4(output_files["final_karaoke_lossless_mp4"], output_files["final_karaoke_lossy_mp4"])
+
+            self.logger.info(f"[Step 5/{total_steps}] Creating MKV with FLAC audio for YouTube (~1 minute)...")
+            self.encode_lossless_mkv(output_files["final_karaoke_lossless_mp4"], output_files["final_karaoke_lossless_mkv"])
+
+            self.logger.info(f"[Step 6/{total_steps}] Encoding 720p version (~3 minutes)...")
+            self.encode_720p_version(output_files["final_karaoke_lossless_mp4"], output_files["final_karaoke_lossy_720p_mp4"])
 
         # Skip user confirmation in non-interactive mode for Modal deployment
         if not self.non_interactive:
-            # Prompt user to check final video files before proceeding
+            if self.make_one_video:
+                confirmation_msg = (
+                    f"Final video file created:\n"
+                    f"- Lossless 4K MP4: {output_files['final_karaoke_lossless_mp4']}\n"
+                    f"Please check it! Proceed?"
+                )
+            else:
+                confirmation_msg = (
+                    f"Final video files created:\n"
+                    f"- Lossless 4K MP4: {output_files['final_karaoke_lossless_mp4']}\n"
+                    f"- Lossless 4K MKV: {output_files['final_karaoke_lossless_mkv']}\n"
+                    f"- Lossy 4K MP4: {output_files['final_karaoke_lossy_mp4']}\n"
+                    f"- Lossy 720p MP4: {output_files['final_karaoke_lossy_720p_mp4']}\n"
+                    f"Please check them! Proceed?"
+                )
             self.prompt_user_confirmation_or_raise_exception(
-                f"Final video files created:\n"
-                f"- Lossless 4K MP4: {output_files['final_karaoke_lossless_mp4']}\n"
-                f"- Lossless 4K MKV: {output_files['final_karaoke_lossless_mkv']}\n"
-                f"- Lossy 4K MP4: {output_files['final_karaoke_lossy_mp4']}\n"
-                f"- Lossy 720p MP4: {output_files['final_karaoke_lossy_720p_mp4']}\n"
-                f"Please check them! Proceed?",
-                "Refusing to proceed without user confirmation they're happy with the Final videos.",
+                confirmation_msg,
+                "Refusing to proceed without user confirmation they're happy with the Final video(s).",
                 allow_empty=True,
             )
         else:
-            self.logger.info("Non-interactive mode: automatically confirming final video files")
+            self.logger.info("Non-interactive mode: automatically confirming final video file(s)")
 
     def _load_duet_segments(self):
         """Load reviewed segments (with per-segment singer tags) from the

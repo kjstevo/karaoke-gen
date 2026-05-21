@@ -242,13 +242,12 @@ def create_parser(prog: str = "karaoke-gen") -> argparse.ArgumentParser:
     lyrics_group.add_argument(
         "--enabled_handlers",
         help=(
-            "Optional: Comma-separated list of correction handlers to enable. "
-            "Defaults to: ExtendAnchorHandler,WordCountMatchHandler,SyllablesMatchHandler,"
-            "RelaxedWordCountMatchHandler,NoSpacePunctuationMatchHandler. "
-            "Available: ExtendAnchorHandler, WordCountMatchHandler, SyllablesMatchHandler, "
-            "RelaxedWordCountMatchHandler, NoSpacePunctuationMatchHandler, RepeatCorrectionHandler, "
-            "SoundAlikeHandler, LevenshteinHandler, FallbackReferenceHandler. "
-            "Example: --enabled_handlers WordCountMatchHandler,SyllablesMatchHandler,FallbackReferenceHandler"
+            "Optional: Comma-separated list of correction handlers to enable (no spaces). "
+            "Default: ExtendAnchorHandler, WordCountMatchHandler, SyllablesMatchHandler, "
+            "RelaxedWordCountMatchHandler, NoSpacePunctuationMatchHandler. "
+            "Additional (off by default): RepeatCorrectionHandler, SoundAlikeHandler, "
+            "LevenshteinHandler, FallbackReferenceHandler. "
+            "Example: --enabled_handlers=WordCountMatchHandler,SyllablesMatchHandler,FallbackReferenceHandler"
         ),
     )
 
@@ -309,6 +308,12 @@ def create_parser(prog: str = "karaoke-gen") -> argparse.ArgumentParser:
         "--no-video",
         action="store_true",
         help="Optional: Skip video encoding and distribution, generate only CDG/TXT packages. Example: --no-video --enable_cdg",
+    )
+    finalise_group.add_argument(
+        "--make1video",
+        action="store_true",
+        default=os.environ.get("MAKE1VIDEO", "").lower() in ("true", "1", "yes"),
+        help="Optional: Output only the lossless 4K MP4, skipping the lossy 4K MP4, lossless MKV, and 720p MP4. Can also be set via the MAKE1VIDEO=true environment variable. Example: --make1video",
     )
     finalise_group.add_argument(
         "--brand_prefix",

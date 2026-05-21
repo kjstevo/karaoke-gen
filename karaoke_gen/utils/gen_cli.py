@@ -580,6 +580,7 @@ async def async_main():
             cdg_styles=cdg_styles,
             keep_brand_code=True,  # Always keep brand code in edit mode
             non_interactive=args.yes,
+            make_one_video=getattr(args, 'make1video', False),
         )
         
         try:
@@ -597,9 +598,10 @@ async def async_main():
             logger.info(f"")
             logger.info(f"Final Videos:")
             logger.info(f" Lossless 4K MP4 (PCM): {final_track['final_video']}")
-            logger.info(f" Lossless 4K MKV (FLAC): {final_track['final_video_mkv']}")
-            logger.info(f" Lossy 4K MP4 (AAC): {final_track['final_video_lossy']}")
-            logger.info(f" Lossy 720p MP4 (AAC): {final_track['final_video_720p']}")
+            if not getattr(args, 'make1video', False):
+                logger.info(f" Lossless 4K MKV (FLAC): {final_track['final_video_mkv']}")
+                logger.info(f" Lossy 4K MP4 (AAC): {final_track['final_video_lossy']}")
+                logger.info(f" Lossy 720p MP4 (AAC): {final_track['final_video_720p']}")
 
             if "final_karaoke_cdg_zip" in final_track or "final_karaoke_txt_zip" in final_track:
                 logger.info(f"")
@@ -693,8 +695,9 @@ async def async_main():
             cdg_styles=cdg_styles,
             keep_brand_code=getattr(args, 'keep_brand_code', False),
             non_interactive=args.yes,
+            make_one_video=getattr(args, 'make1video', False),
         )
-        
+
         try:
             track = kfinalise.process()
             logger.info(f"Successfully completed finalisation for: {track['artist']} - {track['title']}")
@@ -710,9 +713,10 @@ async def async_main():
             logger.info(f"")
             logger.info(f"Final Videos:")
             logger.info(f" Lossless 4K MP4 (PCM): {track['final_video']}")
-            logger.info(f" Lossless 4K MKV (FLAC): {track['final_video_mkv']}")
-            logger.info(f" Lossy 4K MP4 (AAC): {track['final_video_lossy']}")
-            logger.info(f" Lossy 720p MP4 (AAC): {track['final_video_720p']}")
+            if not getattr(args, 'make1video', False):
+                logger.info(f" Lossless 4K MKV (FLAC): {track['final_video_mkv']}")
+                logger.info(f" Lossy 4K MP4 (AAC): {track['final_video_lossy']}")
+                logger.info(f" Lossy 720p MP4 (AAC): {track['final_video_720p']}")
 
             if "final_karaoke_cdg_zip" in track or "final_karaoke_txt_zip" in track:
                 logger.info(f"")
@@ -1164,6 +1168,7 @@ async def async_main():
             selected_instrumental_file=selected_instrumental_file,
             countdown_padding_seconds=countdown_padding_seconds,
             no_video=args.no_video,
+            make_one_video=getattr(args, 'make1video', False),
             is_duet=_is_duet,
             duet_corrections_json_path=duet_corrections_json_path,
         )
@@ -1185,9 +1190,10 @@ async def async_main():
                 logger.info(f"")
                 logger.info(f"Final Videos:")
                 logger.info(f" Lossless 4K MP4 (PCM): {final_track['final_video']}")
-                logger.info(f" Lossless 4K MKV (FLAC): {final_track['final_video_mkv']}")
-                logger.info(f" Lossy 4K MP4 (AAC): {final_track['final_video_lossy']}")
-                logger.info(f" Lossy 720p MP4 (AAC): {final_track['final_video_720p']}")
+                if not getattr(args, 'make1video', False):
+                    logger.info(f" Lossless 4K MKV (FLAC): {final_track['final_video_mkv']}")
+                    logger.info(f" Lossy 4K MP4 (AAC): {final_track['final_video_lossy']}")
+                    logger.info(f" Lossy 720p MP4 (AAC): {final_track['final_video_720p']}")
 
             if "final_karaoke_cdg_zip" in final_track or "final_karaoke_txt_zip" in final_track:
                 logger.info(f"")
