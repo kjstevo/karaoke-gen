@@ -877,7 +877,7 @@ class KaraokeFinalise:
         # Keep the existing approach but use the new execute method
         ffmpeg_command = (
             f'{self.ffmpeg_base_command} -an -i "{with_vocals_file}" '
-            f'-vn -i "{actual_instrumental}" -c:v copy -c:a pcm_s16le "{output_file}"'
+            f'-vn -i "{actual_instrumental}" -c:v copy -c:a alac "{output_file}"'
         )
         self.execute_command(ffmpeg_command, "Remuxing video with instrumental audio")
 
@@ -898,23 +898,23 @@ class KaraokeFinalise:
         self.execute_command_with_fallback(gpu_command, cpu_command, "Converting MOV video to MP4")
 
     def encode_lossless_mp4(self, title_mov_file, karaoke_mp4_file, env_mov_input, ffmpeg_filter, output_file):
-        """Create the final MP4 with PCM audio (lossless) using hardware acceleration when available"""
+        """Create the final MP4 with lossless audio using hardware acceleration when available"""
         # Hardware-accelerated version
         gpu_command = (
             f"{self.ffmpeg_base_command} {self.hwaccel_decode_flags} -i {title_mov_file} "
             f"{self.hwaccel_decode_flags} -i {karaoke_mp4_file} {env_mov_input} "
             f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v {self.video_encoder} '
-            f'{self.get_nvenc_quality_settings("lossless")} -c:a pcm_s16le {self.mp4_flags} "{output_file}"'
+            f'{self.get_nvenc_quality_settings("lossless")} -c:a alac {self.mp4_flags} "{output_file}"'
         )
         
         # Software fallback version
         cpu_command = (
             f"{self.ffmpeg_base_command} -i {title_mov_file} -i {karaoke_mp4_file} {env_mov_input} "
-            f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 -c:a pcm_s16le '
+            f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 -c:a alac '
             f'{self.mp4_flags} "{output_file}"'
         )
         
-        self.execute_command_with_fallback(gpu_command, cpu_command, "Creating MP4 version with PCM audio")
+        self.execute_command_with_fallback(gpu_command, cpu_command, "Creating MP4 version with lossless audio")
 
     def encode_lossy_mp4(self, input_file, output_file):
         """Create MP4 with AAC audio (lossy, for wider compatibility)"""
