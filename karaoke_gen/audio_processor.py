@@ -6,7 +6,7 @@ import glob
 import shutil
 import tempfile
 import time
-import winfcntl
+import fcntl
 import errno
 import psutil
 from datetime import datetime
