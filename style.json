@@ -43,7 +43,7 @@
     "background_color": "#000000",
     "background_image": null,
     "font": "Noto Sans",
-    "font_path": "",
+    "font_path": "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
     "ass_name": "Default",
     "primary_color": "112, 112, 247, 255",
     "secondary_color": "255, 255, 255, 255",
@@ -89,10 +89,10 @@
     }
   },
   "cdg": {
-    "font_path": null,
-    "instrumental_background": null,
-    "title_screen_background": null,
-    "outro_background": null,
+    "font_path": "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "instrumental_background": "/usr/local/lib/python3.12/dist-packages/karaoke_gen/lyrics_transcriber/output/cdgmaker/images/instrumental.png",
+    "title_screen_background": "/usr/local/lib/python3.12/dist-packages/karaoke_gen/lyrics_transcriber/output/cdgmaker/images/intro.png",
+    "outro_background": "/usr/local/lib/python3.12/dist-packages/karaoke_gen/lyrics_transcriber/output/cdgmaker/images/intro.png",
     "clear_mode": "eager",
     "sync_offset": 0,
     "lead_in_threshold": 300,
