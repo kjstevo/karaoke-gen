@@ -1340,7 +1340,7 @@ class ReviewServer:
                     break
 
             # Start server
-            config = uvicorn.Config(self.app, host="127.0.0.1", port=port, log_level="error")
+            config = uvicorn.Config(self.app, host="0.0.0.0", port=port, log_level="error")
             server = uvicorn.Server(config)
             server_thread = Thread(target=server.run, daemon=True)
             server_thread.start()
