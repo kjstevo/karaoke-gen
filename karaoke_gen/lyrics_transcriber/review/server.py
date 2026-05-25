@@ -156,15 +156,19 @@ class ReviewServer:
             + [f"http://127.0.0.1:{port}" for port in range(3000, 5174)]
             + ["https://gen.nomadkaraoke.com"]
         )
-        
+
         # Also allow custom review UI URL if set
         custom_ui = os.environ.get("LYRICS_REVIEW_UI_URL", "")
         if custom_ui and custom_ui.lower() != "local" and custom_ui not in allowed_origins:
             allowed_origins.append(custom_ui)
-        
+
+        # Allow RunPod proxy URLs (https://{pod-id}-{port}.proxy.runpod.net)
+        runpod_origin_regex = r"https://[a-z0-9]+-\d+\.proxy\.runpod\.net"
+
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=allowed_origins,
+            allow_origin_regex=runpod_origin_regex,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
