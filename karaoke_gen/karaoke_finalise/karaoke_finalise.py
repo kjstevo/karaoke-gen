@@ -81,7 +81,7 @@ class KaraokeFinalise:
         # Path to the Windows PyInstaller frozen bundled ffmpeg.exe, or the system-installed FFmpeg binary on Mac/Linux
         ffmpeg_path = os.path.join(sys._MEIPASS, "ffmpeg.exe") if getattr(sys, "frozen", False) else "ffmpeg"
 
-        self.ffmpeg_base_command = f"{ffmpeg_path} -hide_banner -nostats"
+        self.ffmpeg_base_command = f"{ffmpeg_path} -hide_banner -nostats -y"
 
         if self.log_level == logging.DEBUG:
             self.ffmpeg_base_command += " -loglevel verbose"
@@ -161,10 +161,6 @@ class KaraokeFinalise:
 
         # MP4 output flags for browser/player compatibility
         self.mp4_flags = "-pix_fmt yuv420p -movflags +faststart"
-
-        # Update ffmpeg base command to include -y if non-interactive
-        if self.non_interactive:
-            self.ffmpeg_base_command += " -y"
 
         # Detect and configure hardware acceleration
         self.nvenc_available = self.detect_nvenc_support()
