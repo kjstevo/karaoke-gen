@@ -367,8 +367,16 @@ class ReviewServer:
                 raise HTTPException(status_code=404, detail="Chunk not found")
             with open(chunk_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            # Replace the hostname guard: ("localhost"!==e&&"127.0.0.1"!==e) → false
+            # Patch 1 – JobRouterClient route detector:
+            #   ("localhost"!==e&&"127.0.0.1"!==e) → false  (always treat as localhost)
             content = content.replace('"localhost"!==e&&"127.0.0.1"!==e', '!1')
+            # Patch 2 – API client base-URL selector:
+            #   "localhost"===window.location.hostname||"127.0.0.1"===window.location.hostname
+            #   → true  (always use relative URLs, not https://api.nomadkaraoke.com)
+            content = content.replace(
+                '"localhost"===window.location.hostname||"127.0.0.1"===window.location.hostname',
+                '!0'
+            )
             return _Response(content=content, media_type="application/javascript")
         self.app.add_api_route("/_next/static/chunks/{chunk_name:path}", serve_patched_chunk, methods=["GET"])
 
