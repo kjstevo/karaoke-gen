@@ -367,12 +367,9 @@ class ReviewServer:
                 raise HTTPException(status_code=404, detail="Chunk not found")
             with open(chunk_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            # Patch 1 – JobRouterClient route detector:
-            #   ("localhost"!==e&&"127.0.0.1"!==e) → false  (always treat as localhost)
+            if chunk_name.endswith(".css"):
+                return _Response(content=content, media_type="text/css")
             content = content.replace('"localhost"!==e&&"127.0.0.1"!==e', '!1')
-            # Patch 2 – API client base-URL selector:
-            #   "localhost"===window.location.hostname||"127.0.0.1"===window.location.hostname
-            #   → true  (always use relative URLs, not https://api.nomadkaraoke.com)
             content = content.replace(
                 '"localhost"===window.location.hostname||"127.0.0.1"===window.location.hostname',
                 '!0'
