@@ -159,16 +159,15 @@ class KaraokeFinalise:
 
         self.keep_brand_code = keep_brand_code
 
-        # MP4 output flags for better compatibility and streaming
-        self.mp4_flags = "-pix_fmt yuv420p -movflags +faststart+frag_keyframe+empty_moov"
+        # MP4 output flags for browser/player compatibility
+        self.mp4_flags = "-pix_fmt yuv420p -movflags +faststart"
 
         # Update ffmpeg base command to include -y if non-interactive
         if self.non_interactive:
             self.ffmpeg_base_command += " -y"
 
         # Detect and configure hardware acceleration
-        # TODO: Re-enable this once we figure out why the resulting MP4s are 10x larger than when encoded with x264...
-        self.nvenc_available = False # self.detect_nvenc_support()
+        self.nvenc_available = self.detect_nvenc_support()
         self.configure_hardware_acceleration()
 
     def check_input_files_exist(self, base_name, with_vocals_file, instrumental_audio_file):
@@ -1809,7 +1808,7 @@ class KaraokeFinalise:
     def get_nvenc_quality_settings(self, quality_mode="high"):
         """Get NVENC settings based on quality requirements."""
         if quality_mode == "lossless":
-            return "-preset lossless"
+            return "-preset p4 -tune hq -cq 18"  # High quality (audio is ALAC; video doesn't need pixel-perfect lossless)
         elif quality_mode == "high":
             return "-preset p4 -tune hq -cq 18"  # High quality
         elif quality_mode == "medium":
