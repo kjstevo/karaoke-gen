@@ -303,7 +303,7 @@ class LocalPreviewEncodingService:
 
         cmd.extend([
             "-pix_fmt", "yuv420p",  # Required for browser compatibility
-            "-movflags", "+faststart+frag_keyframe+empty_moov+dash",
+            "-movflags", "+faststart",
             "-g", "48",             # Keyframe every 48 frames (2 seconds at 24fps)
             "-keyint_min", "48",
             "-sc_threshold", "0",   # Disable scene change detection for speed
