@@ -242,21 +242,6 @@ class ReviewServer:
         with open(local_review_html, 'r', encoding='utf-8') as f:
             html_content = f.read()
 
-        # JobRouterClient detects local mode by checking window.location.hostname === "localhost".
-        # When served via a remote proxy (e.g. RunPod/Cloudflare), the hostname is the proxy domain
-        # so local mode is never activated and "Page not found" is shown instead.
-        # Inject a synchronous script at the very start of <head> (before any async scripts load)
-        # to override Location.prototype.hostname so the component sees "localhost".
-        local_mode_script = (
-            '<script>'
-            '(function(){try{'
-            'Object.defineProperty(Location.prototype,"hostname",'
-            '{get:function(){return"localhost"},configurable:true})'
-            '}catch(e){}})()'
-            '</script>'
-        )
-        html_content = html_content.replace('<head>', '<head>' + local_mode_script, 1)
-
         # Find the missing chunk that contains JobRouterClient (module 78280)
         # The chunk name is determined at build time, so we need to find it dynamically
         # We look for ",78280," which is the Turbopack module ID pattern
@@ -364,6 +349,29 @@ class ReviewServer:
 
     def _register_routes(self) -> None:
         """Register API routes."""
+        # Serve JS chunks with the local-mode hostname check patched out.
+        # JobRouterClient refuses to enter local mode unless window.location.hostname
+        # is "localhost" or "127.0.0.1". When accessed via a remote proxy (RunPod,
+        # Cloudflare, etc.) the hostname is the proxy domain so the check fails and
+        # the component shows "Page not found". This route is registered BEFORE the
+        # /_next static-file mount so it takes priority, and replaces the hostname
+        # guard with a literal false so the component always enters local mode when
+        # the pathname contains "/local/".
+        async def serve_patched_chunk(chunk_name: str):
+            from fastapi.responses import Response as _Response
+            frontend_dir = getattr(self, '_frontend_dir', None)
+            if not frontend_dir:
+                raise HTTPException(status_code=503, detail="Frontend not ready")
+            chunk_path = os.path.join(frontend_dir, "_next", "static", "chunks", chunk_name)
+            if not os.path.exists(chunk_path):
+                raise HTTPException(status_code=404, detail="Chunk not found")
+            with open(chunk_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            # Replace the hostname guard: ("localhost"!==e&&"127.0.0.1"!==e) → false
+            content = content.replace('"localhost"!==e&&"127.0.0.1"!==e', '!1')
+            return _Response(content=content, media_type="application/javascript")
+        self.app.add_api_route("/_next/static/chunks/{chunk_name:path}", serve_patched_chunk, methods=["GET"])
+
         # Legacy routes (for backward compatibility with old frontend)
         self.app.add_api_route("/api/correction-data", self.get_correction_data, methods=["GET"])
         self.app.add_api_route("/api/complete", self.complete_review, methods=["POST"])
