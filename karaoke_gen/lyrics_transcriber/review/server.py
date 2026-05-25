@@ -242,6 +242,21 @@ class ReviewServer:
         with open(local_review_html, 'r', encoding='utf-8') as f:
             html_content = f.read()
 
+        # JobRouterClient detects local mode by checking window.location.hostname === "localhost".
+        # When served via a remote proxy (e.g. RunPod/Cloudflare), the hostname is the proxy domain
+        # so local mode is never activated and "Page not found" is shown instead.
+        # Inject a synchronous script at the very start of <head> (before any async scripts load)
+        # to override Location.prototype.hostname so the component sees "localhost".
+        local_mode_script = (
+            '<script>'
+            '(function(){try{'
+            'Object.defineProperty(Location.prototype,"hostname",'
+            '{get:function(){return"localhost"},configurable:true})'
+            '}catch(e){}})()'
+            '</script>'
+        )
+        html_content = html_content.replace('<head>', '<head>' + local_mode_script, 1)
+
         # Find the missing chunk that contains JobRouterClient (module 78280)
         # The chunk name is determined at build time, so we need to find it dynamically
         # We look for ",78280," which is the Turbopack module ID pattern
