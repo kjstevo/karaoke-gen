@@ -872,7 +872,7 @@ class KaraokeFinalise:
         # Keep the existing approach but use the new execute method
         ffmpeg_command = (
             f'{self.ffmpeg_base_command} -an -i "{with_vocals_file}" '
-            f'-vn -i "{actual_instrumental}" -c:v copy -c:a alac "{output_file}"'
+            f'-vn -i "{actual_instrumental}" -c:v copy -c:a flac "{output_file}"'
         )
         self.execute_command(ffmpeg_command, "Remuxing video with instrumental audio")
 
@@ -893,15 +893,17 @@ class KaraokeFinalise:
         self.execute_command_with_fallback(gpu_command, cpu_command, "Converting MOV video to MP4")
 
     def encode_lossless_mp4(self, title_mov_file, karaoke_mp4_file, env_mov_input, ffmpeg_filter, output_file):
-        """Create the final MP4 with lossless audio using software video encoding.
+        """Create the final MP4 with lossless FLAC audio using software video encoding.
 
-        h264_nvenc silently drops audio tracks when used with filter_complex concat + ALAC,
-        returning exit code 0 but producing a video-only file. Use libx264 for this multi-input
-        concat step; NVENC is still used for simpler single-input operations.
+        h264_nvenc silently drops audio tracks when used with filter_complex concat,
+        returning exit code 0 but producing a video-only file. Use libx264 for this
+        multi-input concat step; NVENC is still used for simpler single-input operations.
+        FLAC is used instead of ALAC because ALAC has poor cross-platform player support
+        outside Apple software.
         """
         cpu_command = (
             f"{self.ffmpeg_base_command} -i {title_mov_file} -i {karaoke_mp4_file} {env_mov_input} "
-            f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 -c:a alac '
+            f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 -c:a flac '
             f'{self.mp4_flags} "{output_file}"'
         )
 
