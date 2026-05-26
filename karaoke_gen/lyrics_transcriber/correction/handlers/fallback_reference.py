@@ -44,7 +44,9 @@ class FallbackReferenceHandler(GapCorrectionHandler):
         if not gap.preceding_anchor_id:
             return {}
 
-        anchor_by_id = {a.id: a for a in anchor_sequences}
+        # anchor_sequences may contain ScoredAnchor wrappers — unwrap to AnchorSequence
+        anchors = [a.anchor if hasattr(a, "anchor") else a for a in anchor_sequences]
+        anchor_by_id = {a.id: a for a in anchors}
         preceding_anchor = anchor_by_id.get(gap.preceding_anchor_id)
         if not preceding_anchor:
             return {}
