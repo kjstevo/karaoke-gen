@@ -893,23 +893,19 @@ class KaraokeFinalise:
         self.execute_command_with_fallback(gpu_command, cpu_command, "Converting MOV video to MP4")
 
     def encode_lossless_mp4(self, title_mov_file, karaoke_mp4_file, env_mov_input, ffmpeg_filter, output_file):
-        """Create the final MP4 with lossless audio using hardware acceleration when available"""
-        # Hardware-accelerated version
-        gpu_command = (
-            f"{self.ffmpeg_base_command} {self.hwaccel_decode_flags} -i {title_mov_file} "
-            f"{self.hwaccel_decode_flags} -i {karaoke_mp4_file} {env_mov_input} "
-            f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v {self.video_encoder} '
-            f'{self.get_nvenc_quality_settings("lossless")} -c:a alac {self.mp4_flags} "{output_file}"'
-        )
-        
-        # Software fallback version
+        """Create the final MP4 with lossless audio using software video encoding.
+
+        h264_nvenc silently drops audio tracks when used with filter_complex concat + ALAC,
+        returning exit code 0 but producing a video-only file. Use libx264 for this multi-input
+        concat step; NVENC is still used for simpler single-input operations.
+        """
         cpu_command = (
             f"{self.ffmpeg_base_command} -i {title_mov_file} -i {karaoke_mp4_file} {env_mov_input} "
             f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 -c:a alac '
             f'{self.mp4_flags} "{output_file}"'
         )
-        
-        self.execute_command_with_fallback(gpu_command, cpu_command, "Creating MP4 version with lossless audio")
+
+        self.execute_command(cpu_command, "Creating MP4 version with lossless audio")
 
     def encode_lossy_mp4(self, input_file, output_file):
         """Create MP4 with AAC audio (lossy, for wider compatibility)"""
