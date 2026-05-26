@@ -508,8 +508,13 @@ class AnchorSequenceFinder:
             import os
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            # Use parallel processing by default, can be disabled via env var
-            use_parallel = os.getenv("ANCHOR_SEARCH_SEQUENTIAL", "0").lower() not in {"1", "true", "yes"}
+            # Use sequential mode by default: correctly assigns unique reference positions to
+            # each anchor so repeated phrases (e.g. a chorus heard 15 times) each get a
+            # distinct reference slot. The parallel (no-state) mode always takes positions[0],
+            # causing all repetitions to collide on the same reference position and making
+            # between-gap reference slices meaninglessly large.
+            # Set ANCHOR_SEARCH_SEQUENTIAL=0 to re-enable parallel mode.
+            use_parallel = os.getenv("ANCHOR_SEARCH_SEQUENTIAL", "1").lower() not in {"1", "true", "yes"}
             max_workers = int(os.getenv("ANCHOR_SEARCH_WORKERS", "4"))
 
             if use_parallel and len(n_gram_lengths) > 1:
