@@ -95,8 +95,11 @@ pip uninstall -y onnxruntime onnxruntime-gpu && pip install onnxruntime-gpu
 ```
 
 ### Version Bumping
-- Bump `tool.poetry.version` in `pyproject.toml` for code changes
-- Skip for docs-only changes
+- **Always bump `tool.poetry.version` in `pyproject.toml` for every code change**, even small fixes
+- The version format is `MAJOR.MINOR.PATCH` (e.g. `0.174.25`) — increment the PATCH number for fixes and small features
+- Bump version **in the same commit** as the code change, not separately
+- Skip only for docs-only changes (CLAUDE.md, README, etc. with no Python/JS changes)
+- This is important because the package is installed via `pip install git+...` and users need a clear version to reference when reporting issues
 
 ### Infrastructure
 - **All GCP changes via Pulumi PRs** - changes in `infrastructure/` deploy automatically on merge to main
