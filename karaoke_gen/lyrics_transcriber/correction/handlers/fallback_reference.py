@@ -132,27 +132,41 @@ class FallbackReferenceHandler(GapCorrectionHandler):
         if has_ref_words:
             best_source = max(gap.reference_word_ids, key=lambda s: len(gap.reference_word_ids[s]))
             ref_count = len(gap.reference_word_ids[best_source])
-            self.logger.debug(
-                f"FallbackRef: gap has {ref_count} direct ref word(s) via source={best_source}"
-            )
-            return True, {
-                "word_map": word_map,
-                "source": best_source,
-                "effective_reference_word_ids": gap.reference_word_ids,
-            }
 
-        # Gap has no pre-assigned reference words — try to infer from preceding anchor position
+            # If the reference slice is reasonably sized, use it directly.
+            # A slice more than 2x the gap length indicates a misaligned between-gap slice
+            # (caused by non-monotonic anchor reference positions creating oversized spans).
+            # In that case fall through to inference, which uses the preceding anchor position
+            # to pull exactly gap.length words from the right place in the reference.
+            if ref_count <= gap.length * 2:
+                self.logger.debug(
+                    f"FallbackRef: gap has {ref_count} direct ref word(s) via source={best_source}"
+                )
+                return True, {
+                    "word_map": word_map,
+                    "source": best_source,
+                    "effective_reference_word_ids": gap.reference_word_ids,
+                }
+
+            gap_text = " ".join(word_map[wid].text for wid in gap.transcribed_word_ids if wid in word_map)
+            self.logger.info(
+                f"FallbackRef: gap '{gap_text}' has {ref_count} ref words for "
+                f"{gap.length} transcribed ({ref_count / gap.length:.1f}x) — "
+                f"slice likely misaligned, attempting inference instead"
+            )
+
+        else:
+            gap_text = " ".join(word_map[wid].text for wid in gap.transcribed_word_ids if wid in word_map)
+            self.logger.info(
+                f"FallbackRef: gap '{gap_text}' has no direct ref words — attempting position inference"
+            )
+
+        # Either gap has no ref words, or its ref slice is oversized — try positional inference
         anchor_sequences = data.get("anchor_sequences", [])
         reference_lyrics = data.get("reference_lyrics", {})
 
         if not anchor_sequences or not reference_lyrics:
             return False, {}
-
-        # Resolve gap text for logging
-        gap_text = " ".join(word_map[wid].text for wid in gap.transcribed_word_ids if wid in word_map)
-        self.logger.info(
-            f"FallbackRef: gap '{gap_text}' has no direct ref words — attempting position inference"
-        )
 
         inferred = self._infer_reference_words(gap, anchor_sequences, reference_lyrics, word_map=word_map)
         if not inferred:
