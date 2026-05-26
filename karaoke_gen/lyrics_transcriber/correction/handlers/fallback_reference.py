@@ -7,12 +7,15 @@ from karaoke_gen.lyrics_transcriber.correction.handlers.word_operations import W
 
 
 class FallbackReferenceHandler(GapCorrectionHandler):
-    """Fallback handler that replaces gap words with reference lyrics when word counts match.
+    """Fallback handler that always prefers reference lyrics over transcribed lyrics.
 
-    Runs last. When no other handler corrected a gap, this uses the reference text directly
-    as long as at least one source has the same word count as the gap. Useful when the
-    Whisper transcription is too garbled for other handlers to match but the reference
-    word count lines up (e.g. "Cold lucky like pillows" -> "Code Monkey like Fritos").
+    Runs last. When reference lyrics cover a gap (regardless of word count), this
+    replaces as many transcribed words as possible with reference words. Any transcribed
+    words beyond the reference coverage are left unchanged.
+
+    If no reference source covers the gap at all, the transcription is kept as-is.
+    This implements the policy: reference lyrics are authoritative; transcription is
+    only used for sections with no reference coverage (ad-libs, unlisted verses, etc.).
     """
 
     def __init__(self, logger: Optional[logging.Logger] = None):
@@ -26,13 +29,9 @@ class FallbackReferenceHandler(GapCorrectionHandler):
         if not self._validate_data(data):
             return False, {}
 
-        # Find any source whose word count matches the gap
-        for source, word_ids in gap.reference_word_ids.items():
-            if len(word_ids) == gap.length:
-                return True, {"word_map": data["word_map"], "source": source}
-
-        self.logger.debug("No reference source has matching word count for fallback.")
-        return False, {}
+        # Use whichever source has the most reference words for this gap
+        best_source = max(gap.reference_word_ids, key=lambda s: len(gap.reference_word_ids[s]))
+        return True, {"word_map": data["word_map"], "source": best_source}
 
     def handle(self, gap: GapSequence, data: Optional[Dict[str, Any]] = None) -> List[WordCorrection]:
         if not self._validate_data(data):
@@ -40,11 +39,19 @@ class FallbackReferenceHandler(GapCorrectionHandler):
 
         corrections = []
         word_map = data["word_map"]
-        source = data.get("source") or next(
-            s for s, ids in gap.reference_word_ids.items() if len(ids) == gap.length
+        source = data.get("source") or max(
+            gap.reference_word_ids, key=lambda s: len(gap.reference_word_ids[s])
         )
         reference_word_ids = gap.reference_word_ids[source]
         reference_positions = WordOperations.calculate_reference_positions(gap)
+
+        ref_count = len(reference_word_ids)
+        gap_count = gap.length
+        if ref_count != gap_count:
+            self.logger.debug(
+                f"Word count mismatch: gap has {gap_count} word(s), reference has {ref_count}. "
+                f"Replacing {min(gap_count, ref_count)} word(s) from reference."
+            )
 
         for i, (orig_word_id, ref_word_id) in enumerate(zip(gap.transcribed_word_ids, reference_word_ids)):
             if orig_word_id not in word_map:
@@ -63,8 +70,8 @@ class FallbackReferenceHandler(GapCorrectionHandler):
                     corrected_word=ref_word.text,
                     original_position=gap.transcription_position + i,
                     source=source,
-                    confidence=0.7,
-                    reason="Fallback: reference word count matched gap, no other handler succeeded",
+                    confidence=0.9,
+                    reason="Reference lyrics preferred over transcription; no reference coverage gap",
                     reference_positions=reference_positions,
                     handler="FallbackReferenceHandler",
                     original_word_id=orig_word_id,
