@@ -334,6 +334,7 @@ class LyricsCorrector:
             "word_map": word_map,
             "anchor_sequences": self._anchor_sequences,
             "audio_file_hash": metadata.get("audio_file_hash") if metadata else None,
+            "reference_lyrics": self.reference_lyrics,
         }
 
         # Check if we're in agentic-only mode
