@@ -1791,9 +1791,10 @@ class KaraokeFinalise:
         if self.nvenc_available:
             self.video_encoder = "h264_nvenc"
             # Use simpler hardware acceleration that works with complex filter chains
-            # Remove -hwaccel_output_format cuda as it causes pixel format conversion issues
-            self.hwaccel_decode_flags = "-hwaccel cuda"
-            self.scale_filter = "scale"  # Use CPU scaling for complex filter chains
+            # Use CPU decoding — filter_complex (concat) is CPU-based anyway, so GPU decoding
+            # adds a GPU→CPU copy with no benefit and causes audio streams to be dropped.
+            self.hwaccel_decode_flags = ""
+            self.scale_filter = "scale"
             self.logger.info("🚀 Using NVENC hardware acceleration for video encoding")
         else:
             self.video_encoder = "libx264"
