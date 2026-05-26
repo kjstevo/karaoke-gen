@@ -839,7 +839,39 @@ class AnchorSequenceFinder:
                 used_ref_positions[source].update(range(ref_pos, ref_pos + anchor.length))
 
         self.logger.debug(f"🔍 FILTERING: Kept {len(filtered_scored)} non-overlapping anchors out of {len(scored_anchors)}")
-        return filtered_scored
+
+        # Enforce monotonically non-decreasing reference positions in transcription order.
+        # Non-monotonic assignments happen when different n-gram lengths assign reference
+        # positions out of song-order (e.g. a small n-gram later in the transcription gets
+        # an early reference position because sequential mode's used_positions don't encode
+        # ordering). Such backwards jumps cause between-gaps to span huge reference slices,
+        # causing FallbackRef to pull the wrong words from the start of the reference.
+        sorted_by_trans = sorted(filtered_scored, key=lambda a: a.anchor.transcription_position)
+        monotonic_filtered = []
+        ref_end: Dict[str, int] = {}
+
+        for scored_anchor in sorted_by_trans:
+            anchor = scored_anchor.anchor
+            ok = True
+            for source, ref_pos in anchor.reference_positions.items():
+                if ref_pos < ref_end.get(source, 0):
+                    self.logger.debug(
+                        f"🔍 FILTERING: Removing non-monotonic anchor at "
+                        f"transcription pos {anchor.transcription_position}: "
+                        f"ref pos {ref_pos} < prev end {ref_end.get(source, 0)} for source={source}"
+                    )
+                    ok = False
+                    break
+            if ok:
+                monotonic_filtered.append(scored_anchor)
+                for source, ref_pos in anchor.reference_positions.items():
+                    ref_end[source] = max(ref_end.get(source, 0), ref_pos + anchor.length)
+
+        self.logger.debug(
+            f"🔍 FILTERING: Kept {len(monotonic_filtered)} monotonic anchors "
+            f"out of {len(filtered_scored)} after reference position check"
+        )
+        return monotonic_filtered
 
     def _simple_score_anchor(self, anchor: AnchorSequence) -> PhraseScore:
         """
