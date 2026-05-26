@@ -49,13 +49,14 @@ class LyricsCorrector:
         self._anchor_finder = anchor_finder
         self._cache_dir = Path(cache_dir)
 
-        # Define default enabled handlers - excluding LLM, Repeat, SoundAlike, Levenshtein, and Fallback
+        # Define default enabled handlers - excluding LLM, Repeat, SoundAlike, and Levenshtein
         DEFAULT_ENABLED_HANDLERS = [
             "ExtendAnchorHandler",
             "WordCountMatchHandler",
             "SyllablesMatchHandler",
             "RelaxedWordCountMatchHandler",
             "NoSpacePunctuationMatchHandler",
+            "FallbackReferenceHandler",
         ]
 
         # Create all handlers but respect enabled_handlers if provided
