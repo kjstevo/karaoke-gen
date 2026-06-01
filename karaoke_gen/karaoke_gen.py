@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 import re
@@ -604,6 +605,18 @@ class KaraokePrep:
                     self.logger.info(f"Skipping separation: existing instrumental provided: {self.existing_instrumental}")
                 else:
                     self.logger.info("Skipping separation: skip_separation is True.")
+
+                # Flush any lingering ONNX Runtime CUDA/cuDNN state from audio-separator
+                # before Whisper (PyTorch) initialises its own cuDNN context.
+                gc.collect()
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                        torch.cuda.empty_cache()
+                        self.logger.debug("CUDA context flushed between separation and transcription")
+                except Exception as _e:
+                    self.logger.debug(f"CUDA flush skipped: {_e}")
 
                 # Step 2: Lyrics transcription on the vocals stem (or mixed audio fallback).
                 if not self.skip_lyrics:

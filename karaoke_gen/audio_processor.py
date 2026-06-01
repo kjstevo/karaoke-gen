@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 import json
@@ -402,6 +403,26 @@ class AudioProcessor:
                     result["clean_instrumental"]["instrumental"], result["backing_vocals"], artist_title, track_output_dir
                 )
             self._normalize_audio_files(result, artist_title, track_output_dir)
+
+            # Explicitly release ONNX Runtime CUDA/cuDNN handles so PyTorch (Whisper)
+            # can initialise cuDNN cleanly on the next CUDA operation.
+            try:
+                del separator
+            except NameError:
+                pass
+            try:
+                del bv_separator
+            except NameError:
+                pass
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                    self.logger.debug("CUDA context flushed after audio separation")
+            except Exception as _e:
+                self.logger.debug(f"CUDA flush after separation skipped: {_e}")
 
             self.logger.info("Audio separation, combination, and normalization process completed")
             return result

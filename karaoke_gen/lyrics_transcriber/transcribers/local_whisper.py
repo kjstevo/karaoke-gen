@@ -20,6 +20,10 @@ class LocalWhisperConfig:
     cache_dir: Optional[str] = "/workspace/models"  # Directory for model downloads (~/.cache/whisper by default)
     language: Optional[str] = "en"  # Language code for transcription, None for auto-detect
     compute_type: str = "auto"  # float16, float32, int8, auto
+    # Anti-hallucination / accuracy settings
+    temperature: float = 0.0  # 0 = greedy/beam search (most deterministic, least hallucination)
+    beam_size: int = 5  # beam search width when temperature=0
+    initial_prompt: Optional[str] = None  # Reference lyrics text to bias Whisper's vocabulary
 
 
 class LocalWhisperTranscriber(BaseTranscriber):
@@ -187,11 +191,21 @@ class LocalWhisperTranscriber(BaseTranscriber):
                 # Allow Whisper to correctly identify instrumental-only sections as silence
                 # rather than forcing transcription of music with no vocals
                 "no_speech_threshold": 0.6,
+                # Greedy/beam decoding: temperature=0 with beam_size>1 uses beam search,
+                # which is more accurate and less prone to hallucination than sampling
+                "temperature": self.config.temperature,
+                "beam_size": self.config.beam_size,
             }
 
             # Add language if specified
             if self.config.language:
                 transcribe_kwargs["language"] = self.config.language
+
+            # Bias Whisper's vocabulary toward the reference lyrics when available.
+            # This improves accuracy for unusual words/phrases (e.g. proper names, slang).
+            if self.config.initial_prompt:
+                transcribe_kwargs["initial_prompt"] = self.config.initial_prompt
+                self.logger.info(f"Using initial_prompt from reference lyrics ({len(self.config.initial_prompt)} chars)")
 
             self.logger.debug(f"Transcribing with options: {transcribe_kwargs}")
             result = self._whisper_module.transcribe_timestamped(

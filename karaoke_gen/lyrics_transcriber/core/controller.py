@@ -457,10 +457,21 @@ class LyricsTranscriber:
         if not self.results.lyrics_results:
             self.logger.warning("No lyrics found from any source")
 
+    def _build_whisper_initial_prompt(self) -> Optional[str]:
+        """Build an initial_prompt for Whisper from already-fetched reference lyrics."""
+        if not self.results.lyrics_results:
+            return None
+        for source, lyrics_data in self.results.lyrics_results.items():
+            text = lyrics_data.get_full_text().strip()
+            if text:
+                self.logger.info(f"Built Whisper initial_prompt from '{source}' lyrics ({len(text)} chars)")
+                return text
+        return None
+
     def transcribe(self) -> None:
         """Run transcription using all available transcribers."""
         provider_names = list(self.transcribers.keys())
-        
+
         if not provider_names:
             self.logger.warning(
                 "Starting transcription with providers: [] - NO TRANSCRIPTION PROVIDERS CONFIGURED!\n"
@@ -478,9 +489,15 @@ class LyricsTranscriber:
             self.logger.info(f"Starting transcription with providers: {provider_names}")
             self._log_provider_configuration_status()
 
+        # Pass reference lyrics as initial_prompt to LocalWhisper to improve vocabulary accuracy
+        whisper_prompt = self._build_whisper_initial_prompt()
+
         for name, transcriber_info in self.transcribers.items():
             self.logger.info(f"Running transcription with {name}")
-            result = transcriber_info["instance"].transcribe(self.audio_filepath)
+            instance = transcriber_info["instance"]
+            if isinstance(instance, LocalWhisperTranscriber) and whisper_prompt:
+                instance.config.initial_prompt = whisper_prompt
+            result = instance.transcribe(self.audio_filepath)
             if result:
                 # Add the transcriber name and priority to the result
                 self.results.transcription_results.append(
