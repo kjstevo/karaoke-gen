@@ -597,8 +597,10 @@ async def async_main():
             logger.info(f" Video With Instrumental: {final_track['video_with_instrumental']}")
             logger.info(f"")
             logger.info(f"Final Videos:")
-            logger.info(f" Lossless 4K MP4 (PCM): {final_track['final_video']}")
-            if not getattr(args, 'make1video', False):
+            if getattr(args, 'make1video', False):
+                logger.info(f" Lossless 720p MP4 (FLAC): {final_track['final_video']}")
+            else:
+                logger.info(f" Lossless 4K MP4 (PCM): {final_track['final_video']}")
                 logger.info(f" Lossless 4K MKV (FLAC): {final_track['final_video_mkv']}")
                 logger.info(f" Lossy 4K MP4 (AAC): {final_track['final_video_lossy']}")
                 logger.info(f" Lossy 720p MP4 (AAC): {final_track['final_video_720p']}")
@@ -712,8 +714,10 @@ async def async_main():
             logger.info(f" Video With Instrumental: {track['video_with_instrumental']}")
             logger.info(f"")
             logger.info(f"Final Videos:")
-            logger.info(f" Lossless 4K MP4 (PCM): {track['final_video']}")
-            if not getattr(args, 'make1video', False):
+            if getattr(args, 'make1video', False):
+                logger.info(f" Lossless 720p MP4 (FLAC): {track['final_video']}")
+            else:
+                logger.info(f" Lossless 4K MP4 (PCM): {track['final_video']}")
                 logger.info(f" Lossless 4K MKV (FLAC): {track['final_video_mkv']}")
                 logger.info(f" Lossy 4K MP4 (AAC): {track['final_video_lossy']}")
                 logger.info(f" Lossy 720p MP4 (AAC): {track['final_video_720p']}")
@@ -1189,8 +1193,10 @@ async def async_main():
                 logger.info(f" Video With Instrumental: {final_track['video_with_instrumental']}")
                 logger.info(f"")
                 logger.info(f"Final Videos:")
-                logger.info(f" Lossless 4K MP4 (PCM): {final_track['final_video']}")
-                if not getattr(args, 'make1video', False):
+                if getattr(args, 'make1video', False):
+                    logger.info(f" Lossless 720p MP4 (FLAC): {final_track['final_video']}")
+                else:
+                    logger.info(f" Lossless 4K MP4 (PCM): {final_track['final_video']}")
                     logger.info(f" Lossless 4K MKV (FLAC): {final_track['final_video_mkv']}")
                     logger.info(f" Lossy 4K MP4 (AAC): {final_track['final_video_lossy']}")
                     logger.info(f" Lossy 720p MP4 (AAC): {final_track['final_video_720p']}")

@@ -313,7 +313,7 @@ def create_parser(prog: str = "karaoke-gen") -> argparse.ArgumentParser:
         "--make1video",
         action="store_true",
         default=os.environ.get("MAKE1VIDEO", "").lower() in ("true", "1", "yes"),
-        help="Optional: Output only the lossless 4K MP4, skipping the lossy 4K MP4, lossless MKV, and 720p MP4. Can also be set via the MAKE1VIDEO=true environment variable. Example: --make1video",
+        help="Optional: Output only a lossless-audio 720p MP4, skipping the 4K lossless, lossy 4K, lossless MKV, and lossy 720p variants. Reduces file size while preserving audio quality. Can also be set via the MAKE1VIDEO=true environment variable. Example: --make1video",
     )
     finalise_group.add_argument(
         "--brand_prefix",
