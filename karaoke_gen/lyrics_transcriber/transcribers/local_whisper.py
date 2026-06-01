@@ -122,6 +122,21 @@ class LocalWhisperTranscriber(BaseTranscriber):
         self._whisper_module = whisper
 
         device = self._get_device()
+
+        # Audio-separator (ONNX Runtime) runs on the GPU before Whisper and can leave
+        # the CUDA context in a state where cuDNN fails to initialize on its first conv
+        # operation (CUDNN_STATUS_NOT_INITIALIZED). Explicitly initialise the PyTorch
+        # CUDA context and flush any residual allocations before loading the model.
+        if device == "cuda":
+            try:
+                import torch
+                torch.cuda.init()
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                self.logger.debug("CUDA context re-initialised before loading Whisper model")
+            except Exception as e:
+                self.logger.warning(f"CUDA pre-init step failed (non-fatal): {e}")
+
         self.logger.info(f"Loading Whisper model '{self.config.model_size}' on device '{device}'...")
 
         try:
