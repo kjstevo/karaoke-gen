@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "karaoke-gen"
-version = "0.174.38"
+version = "0.174.39"
 description = "Generate karaoke videos with synchronized lyrics. Handles the entire process from downloading audio and lyrics to creating the final video with title screens."
 authors = ["Andrew Beveridge <andrew@beveridge.uk>"]
 license = "MIT"
@@ -23,6 +23,9 @@ documentation = "https://github.com/nomadkaraoke/karaoke-gen/blob/main/README.md
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
 torch = ">=2.7,<2.9"
+# onnxruntime-gpu 1.21+ requires CUDA 13 (pulls nvidia-cudnn-cu13, cuda-toolkit 13.x)
+# which conflicts with PyTorch's CUDA 12.8 cuDNN context.  Pin to <1.21 to stay on CUDA 12.
+onnxruntime-gpu = ">=1.16.0,<1.21.0"
 requests = ">=2"
 beautifulsoup4 = ">=4"
 flacfetch = ">=0.9.0"
