@@ -508,13 +508,8 @@ class AnchorSequenceFinder:
             import os
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            # Use sequential mode by default: correctly assigns unique reference positions to
-            # each anchor so repeated phrases (e.g. a chorus heard 15 times) each get a
-            # distinct reference slot. The parallel (no-state) mode always takes positions[0],
-            # causing all repetitions to collide on the same reference position and making
-            # between-gap reference slices meaninglessly large.
-            # Set ANCHOR_SEARCH_SEQUENTIAL=0 to re-enable parallel mode.
-            use_parallel = os.getenv("ANCHOR_SEARCH_SEQUENTIAL", "1").lower() not in {"1", "true", "yes"}
+            # Use parallel processing by default, can be disabled via env var
+            use_parallel = os.getenv("ANCHOR_SEARCH_SEQUENTIAL", "0").lower() not in {"1", "true", "yes"}
             max_workers = int(os.getenv("ANCHOR_SEARCH_WORKERS", "4"))
 
             if use_parallel and len(n_gram_lengths) > 1:
@@ -797,46 +792,17 @@ class AnchorSequenceFinder:
         self.logger.debug(f"🔍 FILTERING: Filtering {len(scored_anchors)} overlapping sequences")
         filtered_scored = []
         covered_positions: Set[int] = set()
-        # Track used reference positions per source to prevent duplicate reference assignments.
-        # The parallel anchor finder always takes positions[0] for each ngram match, so
-        # repeated phrases (e.g. "grade nine" appearing 15 times) all get the same reference
-        # position. Deduplicating here ensures each reference position is used at most once,
-        # which makes gap.reference_word_ids coherent and enables FallbackRef inference.
-        used_ref_positions: Dict[str, Set[int]] = {}
 
         for scored_anchor in scored_anchors:
             anchor = scored_anchor.anchor
             start_pos = anchor.transcription_position
             end_pos = start_pos + anchor.length
-
+            
             # Check if any position in this anchor's range is already covered
             anchor_positions = set(range(start_pos, end_pos))
-            if anchor_positions & covered_positions:  # Transcription overlap
-                continue
-
-            # Check if this anchor's reference positions conflict with already-used ones.
-            # A conflict means two anchors map to the same reference words — only the
-            # higher-priority (earlier in sorted order) anchor keeps the position.
-            ref_conflict = False
-            for source, ref_pos in anchor.reference_positions.items():
-                ref_range = set(range(ref_pos, ref_pos + anchor.length))
-                if ref_range & used_ref_positions.get(source, set()):
-                    ref_conflict = True
-                    break
-
-            if ref_conflict:
-                self.logger.debug(
-                    f"🔍 FILTERING: Skipping anchor (ref position conflict) at "
-                    f"transcription pos {start_pos}: {anchor.reference_positions}"
-                )
-                continue
-
-            filtered_scored.append(scored_anchor)
-            covered_positions.update(anchor_positions)
-            for source, ref_pos in anchor.reference_positions.items():
-                if source not in used_ref_positions:
-                    used_ref_positions[source] = set()
-                used_ref_positions[source].update(range(ref_pos, ref_pos + anchor.length))
+            if not anchor_positions & covered_positions:  # No overlap with covered
+                filtered_scored.append(scored_anchor)
+                covered_positions.update(anchor_positions)
 
         self.logger.debug(f"🔍 FILTERING: Kept {len(filtered_scored)} non-overlapping anchors out of {len(scored_anchors)}")
         return filtered_scored

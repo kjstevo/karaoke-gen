@@ -6,8 +6,6 @@ import subprocess
 from typing import List, Optional, Tuple
 from copy import deepcopy
 
-import numpy as np
-
 from karaoke_gen.lyrics_transcriber.types import CorrectionResult, LyricsSegment, Word
 from karaoke_gen.lyrics_transcriber.utils.word_utils import WordUtils
 
@@ -79,14 +77,11 @@ class CountdownProcessor:
             "adding countdown intro"
         )
 
-        # Detect the true first vocal onset to correct Whisper's 0.0 snap bug
-        first_vocal_onset = self._get_true_first_vocal_onset(audio_filepath)
-
         # Create padded audio file
         padded_audio_path = self._create_padded_audio(audio_filepath)
 
         # Create modified correction result with adjusted timestamps
-        modified_result = self._add_countdown_to_result(correction_result, first_vocal_onset=first_vocal_onset)
+        modified_result = self._add_countdown_to_result(correction_result)
 
         self.logger.info(
             f"Countdown intro added successfully. "
@@ -179,29 +174,18 @@ class CountdownProcessor:
             self.logger.error(f"Failed to create padded audio: {e.output}")
             raise RuntimeError(f"ffmpeg command failed: {e.output}")
 
-    def _add_countdown_to_result(
-        self, correction_result: CorrectionResult, first_vocal_onset: float = 0.0
-    ) -> CorrectionResult:
+    def _add_countdown_to_result(self, correction_result: CorrectionResult) -> CorrectionResult:
         """
         Create a new CorrectionResult with countdown segment and adjusted timestamps.
 
         Args:
             correction_result: The original correction result
-            first_vocal_onset: True onset time of the first vocal (seconds).
-                When Whisper snaps the first word to 0.0, this corrects it before
-                the countdown shift is applied.
 
         Returns:
             A new CorrectionResult with countdown and shifted timestamps
         """
         # Deep copy the result to avoid modifying the original
         modified_result = deepcopy(correction_result)
-
-        # Correct first-word onset before shifting (fixes Whisper's 0.0 snap bug)
-        if first_vocal_onset > 0.0:
-            self._apply_first_word_correction(modified_result.corrected_segments, first_vocal_onset)
-            if modified_result.resized_segments:
-                self._apply_first_word_correction(modified_result.resized_segments, first_vocal_onset)
 
         # Shift all timestamps in corrected_segments
         self._shift_segments_timestamps(
@@ -252,102 +236,6 @@ class CountdownProcessor:
             for word in segment.words:
                 word.start_time += offset_seconds
                 word.end_time += offset_seconds
-
-    def _get_true_first_vocal_onset(self, audio_filepath: str, analysis_duration: float = 15.0) -> float:
-        """
-        Detect when significant audio content first begins using RMS energy analysis.
-
-        Whisper sometimes assigns start_time=0.0 to the first word even when there is
-        silence or a quiet intro before the vocals. This method analyzes the raw audio
-        to find the actual onset of meaningful content.
-
-        Args:
-            audio_filepath: Path to the audio file to analyze
-            analysis_duration: How many seconds to analyze from the start
-
-        Returns:
-            Time in seconds of the first significant onset, or 0.0 if detection fails
-        """
-        sample_rate = 16000
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-i", audio_filepath,
-            "-t", str(analysis_duration),
-            "-ac", "1",
-            "-ar", str(sample_rate),
-            "-f", "s16le",
-            "-",
-        ]
-
-        try:
-            pcm = subprocess.check_output(cmd, stderr=subprocess.DEVNULL)
-            audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        except Exception as e:
-            self.logger.warning(f"Audio onset detection failed, using 0.0: {e}")
-            return 0.0
-
-        if len(audio) < sample_rate:
-            return 0.0
-
-        window_size = int(sample_rate * 0.025)  # 25 ms
-        hop_size = int(sample_rate * 0.010)      # 10 ms
-
-        rms_values = []
-        times = []
-        for start in range(0, len(audio) - window_size, hop_size):
-            chunk = audio[start : start + window_size]
-            rms = float(np.sqrt(np.mean(chunk**2)))
-            rms_values.append(rms)
-            times.append(start / sample_rate)
-
-        if not rms_values:
-            return 0.0
-
-        rms_arr = np.array(rms_values)
-        max_rms = float(rms_arr.max())
-
-        if max_rms < 1e-6:
-            return 0.0
-
-        # First frame exceeding 1% of peak energy
-        threshold = max_rms * 0.01
-        above = np.where(rms_arr > threshold)[0]
-
-        if len(above) == 0:
-            return 0.0
-
-        onset = times[above[0]]
-        self.logger.debug(f"Detected audio onset at {onset:.3f}s (threshold={threshold:.6f}, max_rms={max_rms:.6f})")
-        return onset
-
-    def _apply_first_word_correction(self, segments: List[LyricsSegment], t_true: float) -> None:
-        """
-        Correct only the first lyric word's start_time from Whisper's erroneous 0.0 to t_true.
-
-        Whisper snaps the first word to 0.0 when the audio starts with silence or a quiet
-        intro. Only the first word is corrected; all subsequent word timestamps from Whisper
-        are accurately aligned and must not be changed.
-
-        Args:
-            segments: List of segments to correct (modified in-place)
-            t_true: The true onset time to apply to the first word
-        """
-        for segment in segments:
-            if not segment.words:
-                continue
-            first_word = segment.words[0]
-            # Only correct when Whisper clearly snapped the timestamp to near-zero
-            # and the detected onset is actually later (we never move timestamps backward)
-            if first_word.start_time >= 0.5 or t_true <= first_word.start_time:
-                break
-            self.logger.info(
-                f"Correcting first word '{first_word.text}' start_time: "
-                f"{first_word.start_time:.3f}s → {t_true:.3f}s"
-            )
-            first_word.start_time = t_true
-            if segment.start_time < 0.5:
-                segment.start_time = t_true
-            break
 
     def _create_countdown_segment(self) -> LyricsSegment:
         """

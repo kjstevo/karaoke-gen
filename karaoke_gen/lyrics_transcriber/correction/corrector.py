@@ -49,14 +49,13 @@ class LyricsCorrector:
         self._anchor_finder = anchor_finder
         self._cache_dir = Path(cache_dir)
 
-        # Define default enabled handlers - excluding LLM, Repeat, SoundAlike, and Levenshtein
+        # Define default enabled handlers - excluding LLM, Repeat, SoundAlike, Levenshtein, and Fallback
         DEFAULT_ENABLED_HANDLERS = [
             "ExtendAnchorHandler",
             "WordCountMatchHandler",
             "SyllablesMatchHandler",
             "RelaxedWordCountMatchHandler",
             "NoSpacePunctuationMatchHandler",
-            "FallbackReferenceHandler",
         ]
 
         # Create all handlers but respect enabled_handlers if provided
@@ -334,7 +333,6 @@ class LyricsCorrector:
             "word_map": word_map,
             "anchor_sequences": self._anchor_sequences,
             "audio_file_hash": metadata.get("audio_file_hash") if metadata else None,
-            "reference_lyrics": self.reference_lyrics,
         }
 
         # Check if we're in agentic-only mode

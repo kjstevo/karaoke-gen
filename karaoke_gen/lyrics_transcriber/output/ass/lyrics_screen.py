@@ -98,13 +98,9 @@ class TimingStrategy:
         # Calculate timings for each line
         timings = []
         positions = PositionCalculator.calculate_line_positions(self.config)
-        # For positions not occupied in the previous screen, default to the latest
-        # clear time across all previous lines rather than 0 (start of video).
-        # Using 0 causes new lines to appear over still-visible earlier content.
-        default_clear_time = max(position_clear_times.values()) if position_clear_times else 0
         for i, (line, position) in enumerate(zip(current_lines, positions)):
             # Fade in as soon as the position is available
-            fade_in_time = position_clear_times.get(position, default_clear_time)
+            fade_in_time = position_clear_times.get(position, 0)
 
             # Calculate remaining timing information
             end_time = line.segment.end_time + self.config.post_roll_time
