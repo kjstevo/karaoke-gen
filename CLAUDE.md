@@ -86,14 +86,6 @@ Files matching `test-*.local.*` and `debug-*.local.*` are gitignored - you can h
 
 See `docs/TESTING.md` § "Ad-Hoc Production Debugging" for full details.
 
-### Local GPU Setup (RunPod / NVIDIA)
-
-After every `pip install` or reinstall of karaoke-gen, the `onnxruntime` CPU package gets pulled in as a dependency and overrides `onnxruntime-gpu`, breaking GPU acceleration for audio separation. Always run this after any reinstall:
-
-```bash
-pip uninstall -y onnxruntime onnxruntime-gpu && pip install onnxruntime-gpu
-```
-
 ### Version Bumping
 - **Always bump `tool.poetry.version` in `pyproject.toml` for every code change**, even small fixes
 - The version format is `MAJOR.MINOR.PATCH` (e.g. `0.174.25`) — increment the PATCH number for fixes and small features
