@@ -222,7 +222,10 @@ class VideoGenerator:
             # Only allow ASCII alphanumeric characters to prevent FFmpeg path issues with Unicode
             safe_prefix = "".join(c if c.isascii() and c.isalnum() else "_" for c in output_prefix)
             timestamp = int(time.time() * 1000)
-            temp_ass_path = os.path.join(self.cache_dir, f"temp_subtitles_{safe_prefix}_{timestamp}.ass")
+            # Use absolute path so the temp file location is independent of CWD changes
+            abs_cache_dir = os.path.abspath(self.cache_dir)
+            os.makedirs(abs_cache_dir, exist_ok=True)
+            temp_ass_path = os.path.join(abs_cache_dir, f"temp_subtitles_{safe_prefix}_{timestamp}.ass")
             import shutil
 
             shutil.copy2(ass_path, temp_ass_path)
@@ -283,7 +286,10 @@ class VideoGenerator:
             # Only allow ASCII alphanumeric characters to prevent FFmpeg path issues with Unicode
             safe_prefix = "".join(c if c.isascii() and c.isalnum() else "_" for c in output_prefix)
             timestamp = int(time.time() * 1000)
-            temp_ass_path = os.path.join(self.cache_dir, f"temp_preview_subtitles_{safe_prefix}_{timestamp}.ass")
+            # Use absolute path so the temp file location is independent of CWD changes
+            abs_cache_dir = os.path.abspath(self.cache_dir)
+            os.makedirs(abs_cache_dir, exist_ok=True)
+            temp_ass_path = os.path.join(abs_cache_dir, f"temp_preview_subtitles_{safe_prefix}_{timestamp}.ass")
 
             shutil.copy2(ass_path, temp_ass_path)
             self.logger.debug(f"Created temporary ASS file: {temp_ass_path}")
@@ -387,17 +393,17 @@ class VideoGenerator:
 
         When using subprocess with a command list (no shell), FFmpeg receives the
         filter string directly. FFmpeg's filter parser requires escaping:
-        - Backslashes: double them (\ -> \\)
-        - Single quotes/apostrophes: escape with three backslashes (' -> \\')
-        - Spaces: escape with backslash ( -> \ )
-
-        Note: This is different from shell escaping. The '\\'\\''' pattern used for
-        shell escaping does NOT work when subprocess passes args directly to FFmpeg.
+        - Backslashes: convert to forward slashes (both work on Windows; avoids
+          filter parser consuming \\t, \\c, etc. as escape sequences)
+        - Single quotes/apostrophes: escape with three backslashes (' -> \\\\')
+        - Spaces: escape with backslash ( -> \\ )
 
         Example: "I'm With You" becomes "I\\\\'m\\ With\\ You"
         """
-        # First escape existing backslashes (\ -> \\)
-        escaped = path.replace("\\", "\\\\")
+        # Convert Windows backslashes to forward slashes to avoid FFmpeg filter
+        # parser consuming \t, \c, etc. as escape sequences. Windows accepts
+        # forward slashes in all path APIs (fopen, CreateFile, etc.).
+        escaped = path.replace("\\", "/")
         # Escape single quotes (' -> \\')
         # In the actual string we need 3 backslashes before the quote
         escaped = escaped.replace("'", "\\\\\\'")

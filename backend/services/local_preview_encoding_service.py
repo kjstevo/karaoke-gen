@@ -179,15 +179,18 @@ class LocalPreviewEncodingService:
 
         When using subprocess with a command list (no shell), FFmpeg receives the
         filter string directly. FFmpeg's filter parser requires escaping:
-        - Backslashes: double them (\\ -> \\\\)
+        - Backslashes: convert to forward slashes (both work on Windows, avoids
+          double-escape issues where \\t in filter strings gets consumed as 't')
         - Single quotes/apostrophes: escape with three backslashes (' -> \\\\')
         - Spaces: escape with backslash ( -> \\ )
         - Special characters: :,[];
 
         Example: "I'm With You" becomes "I\\\\'m\\ With\\ You"
         """
-        # First escape existing backslashes
-        escaped = path.replace("\\", "\\\\")
+        # Convert Windows backslashes to forward slashes to avoid FFmpeg filter
+        # parser consuming \t, \c, etc. as escape sequences. Windows accepts
+        # forward slashes in all path APIs (fopen, CreateFile, etc.).
+        escaped = path.replace("\\", "/")
         # Escape single quotes
         escaped = escaped.replace("'", "\\\\\\'")
         # Escape spaces

@@ -75,7 +75,8 @@ class TestVideoGeneratorUnicodeSanitization:
 
                 # Extract the temp ASS path from the filter
                 # Format: ass=/path/to/temp_subtitles_...:fontsdir=...
-                temp_ass_path = ass_filter_arg.split("=")[1].split(":")[0]
+                # Use maxsplit=1 and split on ':fontsdir=' to handle Windows drive letters (C:)
+                temp_ass_path = ass_filter_arg.split("=", 1)[1].split(":fontsdir=")[0]
 
                 # Verify the temp filename only contains ASCII characters
                 temp_filename = os.path.basename(temp_ass_path)
@@ -171,7 +172,8 @@ class TestVideoGeneratorUnicodeSanitization:
                         ass_filter_arg = cmd[i + 1]
                         break
 
-                temp_ass_path = ass_filter_arg.split("=")[1].split(":")[0]
+                # Use maxsplit=1 and split on ':fontsdir=' to handle Windows drive letters (C:)
+                temp_ass_path = ass_filter_arg.split("=", 1)[1].split(":fontsdir=")[0]
                 temp_filename = os.path.basename(temp_ass_path)
 
                 # Verify filename only contains ASCII
@@ -223,7 +225,8 @@ class TestVideoGeneratorUnicodeSanitization:
                         ass_filter_arg = cmd[i + 1]
                         break
 
-                temp_ass_path = ass_filter_arg.split("=")[1].split(":")[0]
+                # Use maxsplit=1 and split on ':fontsdir=' to handle Windows drive letters (C:)
+                temp_ass_path = ass_filter_arg.split("=", 1)[1].split(":fontsdir=")[0]
                 temp_filename = os.path.basename(temp_ass_path)
 
                 # Verify ASCII alphanumeric characters are preserved
@@ -259,7 +262,8 @@ class TestVideoGeneratorUnicodeSanitization:
                         ass_filter_arg = cmd[i + 1]
                         break
 
-                temp_ass_path = ass_filter_arg.split("=")[1].split(":")[0]
+                # Use maxsplit=1 and split on ':fontsdir=' to handle Windows drive letters (C:)
+                temp_ass_path = ass_filter_arg.split("=", 1)[1].split(":fontsdir=")[0]
                 temp_filename = os.path.basename(temp_ass_path)
 
                 # Verify special characters were replaced

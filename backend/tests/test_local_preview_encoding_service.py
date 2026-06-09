@@ -172,10 +172,11 @@ class TestLocalPreviewEncodingServicePathEscaping:
         assert "\\," in result
 
     def test_escape_path_with_backslashes(self):
-        """Test escaping path with existing backslashes."""
+        """Test that backslashes are converted to forward slashes (Windows path safety)."""
         service = LocalPreviewEncodingService()
         result = service._escape_ffmpeg_filter_path("/path\\with\\backslashes.ass")
-        assert "\\\\" in result
+        assert "\\\\" not in result
+        assert "/" in result
 
 
 class TestLocalPreviewEncodingServiceASSFilter:
