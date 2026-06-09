@@ -1,12 +1,12 @@
 #! /usr/bin/env python3
 from dataclasses import dataclass
+import base64
 import os
 import json
 import requests
-import hashlib
 import tempfile
 import time
-from typing import Optional, Dict, Any, Protocol, Union
+from typing import Optional, Dict, Any, Union
 from pathlib import Path
 from pydub import AudioSegment
 from karaoke_gen.lyrics_transcriber.types import TranscriptionData, LyricsSegment, Word
@@ -20,18 +20,7 @@ class WhisperConfig:
 
     runpod_api_key: Optional[str] = None
     endpoint_id: Optional[str] = None
-    dropbox_app_key: Optional[str] = None
-    dropbox_app_secret: Optional[str] = None
-    dropbox_refresh_token: Optional[str] = None
     timeout_minutes: int = 10
-
-
-class FileStorageProtocol(Protocol):
-    """Protocol for file storage operations."""
-
-    def file_exists(self, path: str) -> bool: ...  # pragma: no cover
-    def upload_with_retry(self, file: Any, path: str) -> None: ...  # pragma: no cover
-    def create_or_get_shared_link(self, path: str) -> str: ...  # pragma: no cover
 
 
 class RunPodWhisperAPI:
@@ -47,14 +36,14 @@ class RunPodWhisperAPI:
         if not self.config.runpod_api_key or not self.config.endpoint_id:
             raise ValueError("RunPod API key and endpoint ID must be provided")
 
-    def submit_job(self, audio_url: str) -> str:
+    def submit_job(self, audio_base64: str) -> str:
         """Submit transcription job and return job ID."""
         run_url = f"https://api.runpod.ai/v2/{self.config.endpoint_id}/run"
         headers = {"Authorization": f"Bearer {self.config.runpod_api_key}"}
 
         payload = {
             "input": {
-                "audio": audio_url,
+                "audio_file": audio_base64,
                 "word_timestamps": True,
                 "model": "medium",
                 "temperature": 0.2,
@@ -142,27 +131,30 @@ class AudioProcessor:
     def __init__(self, logger):
         self.logger = logger
 
-    def get_file_md5(self, filepath: str) -> str:
-        """Calculate MD5 hash of a file."""
-        md5_hash = hashlib.md5()
-        with open(filepath, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                md5_hash.update(chunk)
-        return md5_hash.hexdigest()
-
     def convert_to_flac(self, filepath: str) -> str:
-        """Convert WAV to FLAC if needed for faster upload."""
+        """Convert WAV to FLAC if needed to reduce encoded size."""
         if not filepath.lower().endswith(".wav"):
             return filepath
 
-        self.logger.info("Converting WAV to FLAC for faster upload...")
+        self.logger.info("Converting WAV to FLAC...")
         audio = AudioSegment.from_wav(filepath)
 
-        with tempfile.NamedTemporaryFile(suffix=".flac", delete=False) as temp_flac:
-            flac_path = temp_flac.name
-            audio.export(flac_path, format="flac")
+        with tempfile.NamedTemporaryFile(suffix=".flac", delete=False) as tmp:
+            flac_path = tmp.name
+        audio.export(flac_path, format="flac")
 
         return flac_path
+
+    def compress_for_transcription(self, filepath: str) -> str:
+        """Compress to mono 16kHz MP3 to fit within RunPod's 10MB payload limit."""
+        self.logger.info("Compressing audio to fit RunPod 10MB limit...")
+        audio = AudioSegment.from_file(filepath).set_channels(1).set_frame_rate(16000)
+
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            out_path = tmp.name
+        audio.export(out_path, format="mp3", bitrate="64k")
+
+        return out_path
 
 
 class WhisperTranscriber(BaseTranscriber):
@@ -174,40 +166,18 @@ class WhisperTranscriber(BaseTranscriber):
         config: Optional[WhisperConfig] = None,
         logger: Optional[Any] = None,
         runpod_client: Optional[RunPodWhisperAPI] = None,
-        storage_client: Optional[FileStorageProtocol] = None,
         audio_processor: Optional[AudioProcessor] = None,
     ):
         """Initialize Whisper transcriber."""
         super().__init__(cache_dir=cache_dir, logger=logger)
 
-        # Initialize configuration
         self.config = config or WhisperConfig(
             runpod_api_key=os.getenv("RUNPOD_API_KEY"),
             endpoint_id=os.getenv("WHISPER_RUNPOD_ID"),
-            dropbox_app_key=os.getenv("WHISPER_DROPBOX_APP_KEY"),
-            dropbox_app_secret=os.getenv("WHISPER_DROPBOX_APP_SECRET"),
-            dropbox_refresh_token=os.getenv("WHISPER_DROPBOX_REFRESH_TOKEN"),
         )
 
-        # Initialize components (with dependency injection)
         self.runpod = runpod_client or RunPodWhisperAPI(self.config, self.logger)
-        self.storage = storage_client or self._initialize_storage()
         self.audio_processor = audio_processor or AudioProcessor(self.logger)
-
-    def _initialize_storage(self) -> FileStorageProtocol:
-        """Initialize storage client."""
-        from karaoke_gen.lyrics_transcriber.storage.dropbox import DropboxHandler, DropboxConfig
-
-        # Create config using os.getenv directly
-        config = DropboxConfig(
-            app_key=os.getenv("WHISPER_DROPBOX_APP_KEY"),
-            app_secret=os.getenv("WHISPER_DROPBOX_APP_SECRET"),
-            refresh_token=os.getenv("WHISPER_DROPBOX_REFRESH_TOKEN"),
-        )
-
-        # Log the actual config values being used
-        self.logger.debug("Initializing DropboxHandler with config")
-        return DropboxHandler(config=config)
 
     def get_name(self) -> str:
         return "Whisper"
@@ -223,26 +193,39 @@ class WhisperTranscriber(BaseTranscriber):
 
     def start_transcription(self, audio_filepath: str) -> str:
         """Prepare audio and start whisper transcription job."""
-        audio_url, temp_filepath = self._prepare_audio_url(audio_filepath)
+        audio_base64, temp_filepath = self._encode_audio_as_base64(audio_filepath)
         try:
-            return self.runpod.submit_job(audio_url)
+            return self.runpod.submit_job(audio_base64)
         except Exception as e:
             if temp_filepath:
                 self._cleanup_temporary_files(temp_filepath)
             raise TranscriptionError(f"Failed to submit job: {str(e)}") from e
 
-    def _prepare_audio_url(self, audio_filepath: str) -> tuple[str, Optional[str]]:
-        """Process audio file and return URL for API and path to any temporary files."""
-        if audio_filepath.startswith(("http://", "https://")):
-            return audio_filepath, None
+    _RUNPOD_MAX_BYTES = 10 * 1024 * 1024  # 10MB RunPod payload limit
 
-        file_hash = self.audio_processor.get_file_md5(audio_filepath)
-        temp_flac_filepath = self.audio_processor.convert_to_flac(audio_filepath)
+    def _encode_audio_as_base64(self, audio_filepath: str) -> tuple[str, Optional[str]]:
+        """Convert audio file to base64 string for direct API submission.
 
-        # Upload and get URL
-        dropbox_path = f"/transcription_temp/{file_hash}{os.path.splitext(temp_flac_filepath)[1]}"
-        url = self._upload_and_get_link(temp_flac_filepath, dropbox_path)
-        return url, temp_flac_filepath
+        Compresses to mono 16kHz MP3 if the base64-encoded size would exceed RunPod's 10MB limit.
+        """
+        working_path = self.audio_processor.convert_to_flac(audio_filepath)
+        flac_is_temp = working_path != audio_filepath
+
+        # base64 expands size by ~4/3; check before encoding
+        if os.path.getsize(working_path) * 4 // 3 > self._RUNPOD_MAX_BYTES:
+            compressed_path = self.audio_processor.compress_for_transcription(working_path)
+            if flac_is_temp:
+                self._cleanup_temporary_files(working_path)
+            working_path = compressed_path
+            is_temp = True
+        else:
+            is_temp = flac_is_temp
+
+        self.logger.info("Encoding audio as base64...")
+        with open(working_path, "rb") as f:
+            audio_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+        return audio_base64, working_path if is_temp else None
 
     def get_transcription_result(self, job_id: str) -> Dict[str, Any]:
         """Poll for whisper job completion and return raw results."""
@@ -298,19 +281,6 @@ class WhisperTranscriber(BaseTranscriber):
                 "job_id": job_id,
             },
         )
-
-    def _upload_and_get_link(self, filepath: str, dropbox_path: str) -> str:
-        """Upload file to storage and return shared link."""
-        if not self.storage.file_exists(dropbox_path):
-            self.logger.info("Uploading file to storage...")
-            with open(filepath, "rb") as f:
-                self.storage.upload_with_retry(f, dropbox_path)
-        else:
-            self.logger.info("File already exists in storage, skipping upload...")
-
-        audio_url = self.storage.create_or_get_shared_link(dropbox_path)
-        self.logger.debug(f"Using shared link: {audio_url}")
-        return audio_url
 
     def _cleanup_temporary_files(self, *filepaths: Optional[str]) -> None:
         """Clean up any temporary files that were created during transcription."""
