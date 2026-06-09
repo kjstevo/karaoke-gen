@@ -83,8 +83,6 @@ class KaraokePrep:
         background_video_darkness=50,
         # Audio Fetcher Configuration
         auto_download=False,
-        # Correction Configuration
-        enabled_handlers=None,
     ):
         self.log_level = log_level
         self.log_formatter = log_formatter
@@ -133,7 +131,6 @@ class KaraokePrep:
         self.skip_transcription_review = skip_transcription_review # Passed to LyricsProcessor
         self.render_video = render_video # Passed to LyricsProcessor
         self.subtitle_offset_ms = subtitle_offset_ms # Passed to LyricsProcessor
-        self.enabled_handlers = enabled_handlers # Passed to LyricsProcessor
 
         # Audio Config - Keep needed ones
         self.existing_instrumental = existing_instrumental # Used in prep_single_track logic
@@ -206,7 +203,6 @@ class KaraokePrep:
              skip_transcription_review=self.skip_transcription_review,
              render_video=self.render_video,
              subtitle_offset_ms=self.subtitle_offset_ms,
-             enabled_handlers=self.enabled_handlers,
         )
 
         self.video_generator = VideoGenerator(

@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -14,10 +14,10 @@ class TranscriberConfig:
     # Local Whisper configuration - reads from environment variables with sensible defaults
     # Environment variables: WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_CACHE_DIR, WHISPER_LANGUAGE
     enable_local_whisper: bool = True  # Enabled by default as fallback
-    local_whisper_model_size: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL_SIZE", "large-v2"))
+    local_whisper_model_size: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL_SIZE", "medium"))
     local_whisper_device: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_DEVICE"))
-    local_whisper_cache_dir: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_CACHE_DIR","/workspace/models"))
-    local_whisper_language: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_LANGUAGE", "en"))
+    local_whisper_cache_dir: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_CACHE_DIR"))
+    local_whisper_language: Optional[str] = field(default_factory=lambda: os.getenv("WHISPER_LANGUAGE"))
 
 
 @dataclass
@@ -63,6 +63,3 @@ class OutputConfig:
 
     # Duet mode: render two-singer layout in subtitles
     is_duet: bool = False
-
-    # Correction handlers to enable. None means use the corrector's built-in defaults.
-    enabled_handlers: Optional[List[str]] = None

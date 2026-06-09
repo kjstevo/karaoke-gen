@@ -505,7 +505,6 @@ async def async_main():
             background_video=args.background_video,
             background_video_darkness=args.background_video_darkness,
             auto_download=getattr(args, 'auto_download', False),
-            enabled_handlers=getattr(args, 'enabled_handlers', None),
         )
         # No await needed for constructor
         kprep = kprep_coroutine
@@ -862,7 +861,6 @@ async def async_main():
         background_video_darkness=args.background_video_darkness,
         auto_download=getattr(args, 'auto_download', False),
         render_video=render_video_in_prep,  # Only render if review is skipped
-        enabled_handlers=getattr(args, 'enabled_handlers', None),
     )
     # No await needed for constructor
     kprep = kprep_coroutine

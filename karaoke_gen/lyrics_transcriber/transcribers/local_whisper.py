@@ -15,10 +15,10 @@ from karaoke_gen.lyrics_transcriber.utils.word_utils import WordUtils
 class LocalWhisperConfig:
     """Configuration for local Whisper transcription service."""
 
-    model_size: str = "large-v2"  # tiny, base, small, medium, large, large-v2, large-v3
+    model_size: str = "medium"  # tiny, base, small, medium, large, large-v2, large-v3
     device: Optional[str] = None  # None for auto-detect, or "cpu", "cuda", "mps"
-    cache_dir: Optional[str] = "/workspace/models"  # Directory for model downloads (~/.cache/whisper by default)
-    language: Optional[str] = "en"  # Language code for transcription, None for auto-detect
+    cache_dir: Optional[str] = None  # Directory for model downloads (~/.cache/whisper by default)
+    language: Optional[str] = None  # Language code for transcription, None for auto-detect
     compute_type: str = "auto"  # float16, float32, int8, auto
 
 
@@ -59,10 +59,10 @@ class LocalWhisperTranscriber(BaseTranscriber):
 
         # Initialize configuration from env vars or defaults
         self.config = config or LocalWhisperConfig(
-            model_size=os.getenv("WHISPER_MODEL_SIZE", "large-v2"),
+            model_size=os.getenv("WHISPER_MODEL_SIZE", "medium"),
             device=os.getenv("WHISPER_DEVICE"),  # None for auto-detect
-            cache_dir=os.getenv("WHISPER_CACHE_DIR","/workspace/models"),
-            language=os.getenv("WHISPER_LANGUAGE","en"),  # None for auto-detect
+            cache_dir=os.getenv("WHISPER_CACHE_DIR"),
+            language=os.getenv("WHISPER_LANGUAGE"),  # None for auto-detect
         )
 
         # Lazy-loaded model instance (loaded on first use)
@@ -164,14 +164,6 @@ class LocalWhisperTranscriber(BaseTranscriber):
             # Perform transcription with word-level timestamps
             transcribe_kwargs = {
                 "verbose": False,
-                # Prevents hallucination loops: each segment is decoded from audio alone
-                # rather than conditioning on (potentially hallucinated) prior segment text
-                "condition_on_previous_text": False,
-                # Reject segments whose output is absurdly repetitive within a single chunk
-                "compression_ratio_threshold": 2.4,
-                # Allow Whisper to correctly identify instrumental-only sections as silence
-                # rather than forcing transcription of music with no vocals
-                "no_speech_threshold": 0.6,
             }
 
             # Add language if specified
