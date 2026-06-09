@@ -8,7 +8,10 @@ import shutil
 import asyncio
 import signal
 import time
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    import winfcntl as fcntl
 import errno
 import psutil
 from datetime import datetime
@@ -361,10 +364,13 @@ class KaraokePrep:
         return separated_audio
 
     async def prep_single_track(self):
-        # Add signal handler at the start
+        # Add signal handler at the start (not supported on Windows)
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self.shutdown(s)))
+            try:
+                loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self.shutdown(s)))
+            except NotImplementedError:
+                pass
 
         try:
             self.logger.info(f"Preparing single track: {self.artist} - {self.title}")
@@ -1031,9 +1037,12 @@ class KaraokePrep:
             self.logger.error(f"Error in prep_single_track: {e}")
             raise
         finally:
-            # Remove signal handlers
+            # Remove signal handlers (not supported on Windows)
             for sig in (signal.SIGINT, signal.SIGTERM):
-                loop.remove_signal_handler(sig)
+                try:
+                    loop.remove_signal_handler(sig)
+                except NotImplementedError:
+                    pass
 
     async def shutdown(self, signal_received):
         """Handle shutdown signals gracefully."""

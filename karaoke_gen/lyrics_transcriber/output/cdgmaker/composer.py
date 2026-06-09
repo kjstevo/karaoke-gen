@@ -5,8 +5,15 @@ import operator
 from pathlib import Path
 import re
 import sys
-import tomllib
-from typing import NamedTuple, Self, TYPE_CHECKING, cast, Iterable, TypeVar
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+from typing import NamedTuple, TYPE_CHECKING, cast, Iterable, TypeVar
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 from zipfile import ZipFile
 
 import ffmpeg

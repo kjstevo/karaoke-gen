@@ -44,14 +44,9 @@ class RunPodWhisperAPI:
         payload = {
             "input": {
                 "audio_file": audio_base64,
-                "word_timestamps": True,
-                "model": "medium",
-                "temperature": 0.2,
-                "best_of": 5,
-                "compression_ratio_threshold": 2.8,
-                "no_speech_threshold": 1,
-                "condition_on_previous_text": True,
-                "enable_vad": True,
+                "align_output": True,
+                "batch_size": 32,
+                "debug": True,
             }
         }
 
@@ -116,7 +111,11 @@ class RunPodWhisperAPI:
             status_data = self.get_job_status(job_id)
 
             if status_data["status"] == "COMPLETED":
-                return status_data["output"]
+                output = status_data.get("output")
+                if output is None:
+                    self.logger.error(f"RunPod COMPLETED response missing 'output': {status_data}")
+                    raise TranscriptionError("RunPod job completed but returned no output")
+                return output
             elif status_data["status"] == "FAILED":
                 error_msg = status_data.get("error", "Unknown error")
                 self.logger.error(f"Job failed with error: {error_msg}")
@@ -131,28 +130,14 @@ class AudioProcessor:
     def __init__(self, logger):
         self.logger = logger
 
-    def convert_to_flac(self, filepath: str) -> str:
-        """Convert WAV to FLAC if needed to reduce encoded size."""
-        if not filepath.lower().endswith(".wav"):
-            return filepath
-
-        self.logger.info("Converting WAV to FLAC...")
-        audio = AudioSegment.from_wav(filepath)
-
-        with tempfile.NamedTemporaryFile(suffix=".flac", delete=False) as tmp:
-            flac_path = tmp.name
-        audio.export(flac_path, format="flac")
-
-        return flac_path
-
-    def compress_for_transcription(self, filepath: str) -> str:
-        """Compress to mono 16kHz MP3 to fit within RunPod's 10MB payload limit."""
-        self.logger.info("Compressing audio to fit RunPod 10MB limit...")
+    def to_mono_16k_wav(self, filepath: str) -> str:
+        """Convert audio to mono 16kHz WAV (the format the RunPod handler expects)."""
+        self.logger.info("Converting audio to mono 16kHz WAV...")
         audio = AudioSegment.from_file(filepath).set_channels(1).set_frame_rate(16000)
 
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             out_path = tmp.name
-        audio.export(out_path, format="mp3", bitrate="64k")
+        audio.export(out_path, format="wav")
 
         return out_path
 
@@ -204,28 +189,21 @@ class WhisperTranscriber(BaseTranscriber):
     _RUNPOD_MAX_BYTES = 10 * 1024 * 1024  # 10MB RunPod payload limit
 
     def _encode_audio_as_base64(self, audio_filepath: str) -> tuple[str, Optional[str]]:
-        """Convert audio file to base64 string for direct API submission.
+        """Convert audio to mono 16kHz WAV data URI for RunPod submission."""
+        wav_path = self.audio_processor.to_mono_16k_wav(audio_filepath)
 
-        Compresses to mono 16kHz MP3 if the base64-encoded size would exceed RunPod's 10MB limit.
-        """
-        working_path = self.audio_processor.convert_to_flac(audio_filepath)
-        flac_is_temp = working_path != audio_filepath
+        raw_size = os.path.getsize(wav_path)
+        self.logger.info(f"Mono 16kHz WAV size: {raw_size / 1024 / 1024:.1f}MB (base64: ~{raw_size * 4 // 3 / 1024 / 1024:.1f}MB)")
 
-        # base64 expands size by ~4/3; check before encoding
-        if os.path.getsize(working_path) * 4 // 3 > self._RUNPOD_MAX_BYTES:
-            compressed_path = self.audio_processor.compress_for_transcription(working_path)
-            if flac_is_temp:
-                self._cleanup_temporary_files(working_path)
-            working_path = compressed_path
-            is_temp = True
-        else:
-            is_temp = flac_is_temp
+        if raw_size * 4 // 3 > self._RUNPOD_MAX_BYTES:
+            self.logger.warning(f"WAV exceeds RunPod limit — audio is unusually long ({raw_size / 1024 / 1024:.1f}MB mono 16kHz)")
 
         self.logger.info("Encoding audio as base64...")
-        with open(working_path, "rb") as f:
+        with open(wav_path, "rb") as f:
             audio_base64 = base64.b64encode(f.read()).decode("utf-8")
 
-        return audio_base64, working_path if is_temp else None
+        data_uri = f"data:audio/wav;base64,{audio_base64}"
+        return data_uri, wav_path
 
     def get_transcription_result(self, job_id: str) -> Dict[str, Any]:
         """Poll for whisper job completion and return raw results."""
@@ -237,43 +215,45 @@ class WhisperTranscriber(BaseTranscriber):
         return raw_data
 
     def _convert_result_format(self, raw_data: Dict[str, Any]) -> TranscriptionData:
-        """Convert Whisper API response to standard format."""
+        """Convert WhisperX API response to standard format.
+
+        WhisperX returns segments with words embedded (start/end/word/score),
+        not a separate word_timestamps list or a top-level transcription field.
+        """
         self._validate_response(raw_data)
 
         job_id = raw_data.get("job_id")
         all_words = []
-
-        # First collect all words from word_timestamps
-        word_list = [
-            Word(
-                id=WordUtils.generate_id(),  # Generate unique ID for each word
-                text=word["word"].strip(),
-                start_time=word["start"],
-                end_time=word["end"],
-                confidence=word.get("probability"),  # Only set if provided
-            )
-            for word in raw_data.get("word_timestamps", [])
-        ]
-        all_words.extend(word_list)
-
-        # Then create segments, using the words that fall within each segment's time range
         segments = []
+
         for seg in raw_data["segments"]:
-            segment_words = [word for word in word_list if seg["start"] <= word.start_time < seg["end"]]
+            seg_words = [
+                Word(
+                    id=WordUtils.generate_id(),
+                    text=w["word"].strip(),
+                    start_time=w["start"],
+                    end_time=w["end"],
+                    confidence=w.get("score"),
+                )
+                for w in seg.get("words", [])
+            ]
+            all_words.extend(seg_words)
             segments.append(
                 LyricsSegment(
-                    id=WordUtils.generate_id(),  # Generate unique ID for each segment
+                    id=WordUtils.generate_id(),
                     text=seg["text"].strip(),
-                    words=segment_words,
+                    words=seg_words,
                     start_time=seg["start"],
                     end_time=seg["end"],
                 )
             )
 
+        full_text = " ".join(seg["text"].strip() for seg in raw_data["segments"])
+
         return TranscriptionData(
             segments=segments,
             words=all_words,
-            text=raw_data["transcription"],
+            text=full_text,
             source=self.get_name(),
             metadata={
                 "language": raw_data.get("detected_language", "en"),
@@ -296,5 +276,3 @@ class WhisperTranscriber(BaseTranscriber):
         """Validate the response contains required fields."""
         if "segments" not in raw_data:
             raise TranscriptionError("Response missing required 'segments' field")
-        if "transcription" not in raw_data:
-            raise TranscriptionError("Response missing required 'transcription' field")
