@@ -236,6 +236,7 @@ class WhisperTranscriber(BaseTranscriber):
                     confidence=w.get("score"),
                 )
                 for w in seg.get("words", [])
+                if w.get("start") is not None and w.get("end") is not None
             ]
             all_words.extend(seg_words)
             segments.append(

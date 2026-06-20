@@ -268,6 +268,10 @@ class LyricsLine:
         current_inline_singer = None  # tracks whether we've emitted a color override
 
         for word in self.segment.words:
+            if word.start_time is None or word.end_time is None:
+                self.logger.warning(f"Word '{word.text}' has no timing; skipping in ASS output")
+                continue
+
             # Add gap between words if needed
             gap = word.start_time - prev_end_time
             if gap > 0.1:  # Only add gap if significant

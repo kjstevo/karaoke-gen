@@ -487,13 +487,30 @@ class AudioProcessor:
 
             result = {"clean_instrumental": {}, "other_stems": {}, "backing_vocals": {}, "combined_instrumentals": {}}
 
-            if os.path.exists(mixed_vocals_path):
-                result["clean_instrumental"]["vocals"] = mixed_vocals_path
-            if os.path.exists(mixed_instrumental_path):
+            stage1_downloaded = stage1_result.get("downloaded_files", [])
+
+            def _find_stage1_file(prefix_fragment):
+                # Exact name first (API honoured custom_output_names fully)
+                exact = os.path.join(stems_dir, f"{prefix_fragment}.{fmt}")
+                if os.path.exists(exact):
+                    return exact
+                # Fallback: API appended model identifier after the custom prefix
+                for f in stage1_downloaded:
+                    bn = os.path.basename(f)
+                    if bn.startswith(prefix_fragment) and bn.endswith(f".{fmt}") and os.path.exists(f):
+                        return f
+                return None
+
+            vocals_file = _find_stage1_file(f"{file_prefix}_mixed_vocals")
+            if vocals_file:
+                result["clean_instrumental"]["vocals"] = vocals_file
+
+            instrumental_file = _find_stage1_file(f"{file_prefix}_mixed_instrumental")
+            if instrumental_file:
                 # Move instrumental to track_output_dir (not stems_dir) per existing convention
-                final_instrumental_path = os.path.join(track_output_dir, f"{file_prefix}_mixed_instrumental.{fmt}")
-                if mixed_instrumental_path != final_instrumental_path:
-                    shutil.move(mixed_instrumental_path, final_instrumental_path)
+                final_instrumental_path = os.path.join(track_output_dir, os.path.basename(instrumental_file))
+                if instrumental_file != final_instrumental_path:
+                    shutil.move(instrumental_file, final_instrumental_path)
                 result["clean_instrumental"]["instrumental"] = final_instrumental_path
 
             # Validate essential outputs
