@@ -146,37 +146,39 @@ class TestLocalPreviewEncodingServicePathEscaping:
         """Test escaping a simple path."""
         service = LocalPreviewEncodingService()
         result = service._escape_ffmpeg_filter_path("/simple/path.ass")
-        assert result == "/simple/path.ass"
+        assert result == "'/simple/path.ass'"
 
     def test_escape_path_with_spaces(self):
-        """Test escaping path with spaces."""
+        """Test escaping path with spaces — single-quote wrapping protects spaces."""
         service = LocalPreviewEncodingService()
         result = service._escape_ffmpeg_filter_path("/path/with spaces/file.ass")
-        assert "\\ " in result  # Spaces should be escaped
+        assert result == "'/path/with spaces/file.ass'"
 
     def test_escape_path_with_apostrophe(self):
         """Test escaping path with apostrophe (common in song titles)."""
         service = LocalPreviewEncodingService()
         result = service._escape_ffmpeg_filter_path("/path/I'm With You/file.ass")
-        assert "\\\\\\'" in result  # Apostrophe should be triple-backslash escaped
+        assert result == "'/path/I'\\''m With You/file.ass'"
 
     def test_escape_path_with_special_chars(self):
-        """Test escaping path with FFmpeg special characters."""
+        """Test that single-quote wrapping protects FFmpeg special characters."""
         service = LocalPreviewEncodingService()
         result = service._escape_ffmpeg_filter_path("/path:with[special];chars,here.ass")
-        # Should escape :,[];
-        assert "\\:" in result
-        assert "\\[" in result
-        assert "\\]" in result
-        assert "\\;" in result
-        assert "\\," in result
+        # All special chars are protected inside single quotes — no backslash escaping needed
+        assert result == "'/path:with[special];chars,here.ass'"
 
     def test_escape_path_with_backslashes(self):
         """Test that backslashes are converted to forward slashes (Windows path safety)."""
         service = LocalPreviewEncodingService()
         result = service._escape_ffmpeg_filter_path("/path\\with\\backslashes.ass")
-        assert "\\\\" not in result
-        assert "/" in result
+        assert result == "'/path/with/backslashes.ass'"
+
+    def test_escape_windows_drive_path(self):
+        """Test that Windows drive-letter paths with colons are handled correctly."""
+        service = LocalPreviewEncodingService()
+        result = service._escape_ffmpeg_filter_path("C:\\Users\\User Name\\path\\file.ass")
+        # Colon in C: must NOT split the filter option — single-quote wrapping prevents this
+        assert result == "'C:/Users/User Name/path/file.ass'"
 
 
 class TestLocalPreviewEncodingServiceASSFilter:

@@ -391,25 +391,18 @@ class VideoGenerator:
     def _escape_ffmpeg_filter_path(self, path: str) -> str:
         """Escape a path for FFmpeg filter expressions (for subprocess without shell).
 
-        When using subprocess with a command list (no shell), FFmpeg receives the
-        filter string directly. FFmpeg's filter parser requires escaping:
-        - Backslashes: convert to forward slashes (both work on Windows; avoids
-          filter parser consuming \\t, \\c, etc. as escape sequences)
-        - Single quotes/apostrophes: escape with three backslashes (' -> \\\\')
-        - Spaces: escape with backslash ( -> \\ )
+        Uses single-quote wrapping which reliably protects all special characters
+        including colons (Windows drive letters like C:), spaces, and FFmpeg filter
+        syntax characters. Single quotes within the path are escaped as '\\'' per
+        FFmpeg filter string escaping rules.
 
-        Example: "I'm With You" becomes "I\\\\'m\\ With\\ You"
+        Backslashes are converted to forward slashes first since Windows accepts
+        both, and this avoids any ambiguity with FFmpeg's escape character inside
+        quoted strings.
         """
-        # Convert Windows backslashes to forward slashes to avoid FFmpeg filter
-        # parser consuming \t, \c, etc. as escape sequences. Windows accepts
-        # forward slashes in all path APIs (fopen, CreateFile, etc.).
-        escaped = path.replace("\\", "/")
-        # Escape single quotes (' -> \\')
-        # In the actual string we need 3 backslashes before the quote
-        escaped = escaped.replace("'", "\\\\\\'")
-        # Escape spaces
-        escaped = escaped.replace(" ", "\\ ")
-        return escaped
+        path = path.replace("\\", "/")
+        path = path.replace("'", "'\\''")
+        return f"'{path}'"
 
     def _build_ass_filter(self, ass_path: str) -> str:
         """Build ASS filter with font directory support."""

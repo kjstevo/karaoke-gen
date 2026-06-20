@@ -177,31 +177,21 @@ class LocalPreviewEncodingService:
         """
         Escape a path for FFmpeg filter expressions (for subprocess without shell).
 
-        When using subprocess with a command list (no shell), FFmpeg receives the
-        filter string directly. FFmpeg's filter parser requires escaping:
-        - Backslashes: convert to forward slashes (both work on Windows, avoids
-          double-escape issues where \\t in filter strings gets consumed as 't')
-        - Single quotes/apostrophes: escape with three backslashes (' -> \\\\')
-        - Spaces: escape with backslash ( -> \\ )
-        - Special characters: :,[];
+        Uses single-quote wrapping which reliably protects all special characters
+        including colons (Windows drive letters like C:), spaces, and FFmpeg filter
+        syntax characters. Single quotes within the path are escaped as '\\'' per
+        FFmpeg filter string escaping rules.
 
-        Example: "I'm With You" becomes "I\\\\'m\\ With\\ You"
+        Backslashes are converted to forward slashes first since Windows accepts
+        both, and this avoids any ambiguity with FFmpeg's escape character inside
+        quoted strings.
         """
-        # Convert Windows backslashes to forward slashes to avoid FFmpeg filter
-        # parser consuming \t, \c, etc. as escape sequences. Windows accepts
-        # forward slashes in all path APIs (fopen, CreateFile, etc.).
-        escaped = path.replace("\\", "/")
-        # Escape single quotes
-        escaped = escaped.replace("'", "\\\\\\'")
-        # Escape spaces
-        escaped = escaped.replace(" ", "\\ ")
-        # Escape FFmpeg filter special characters
-        escaped = escaped.replace(":", "\\:")
-        escaped = escaped.replace(",", "\\,")
-        escaped = escaped.replace("[", "\\[")
-        escaped = escaped.replace("]", "\\]")
-        escaped = escaped.replace(";", "\\;")
-        return escaped
+        # Convert Windows backslashes to forward slashes
+        path = path.replace("\\", "/")
+        # Escape single quotes using the '\\'' pattern
+        path = path.replace("'", "'\\''")
+        # Wrap in single quotes to protect colons, spaces, and all other special chars
+        return f"'{path}'"
 
     def _build_ass_filter(self, ass_path: str, font_path: Optional[str] = None) -> str:
         """
