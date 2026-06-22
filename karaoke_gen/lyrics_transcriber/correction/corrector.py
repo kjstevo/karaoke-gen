@@ -6,6 +6,7 @@ import os
 import shortuuid
 import time
 
+from karaoke_gen.lyrics_transcriber.correction.handlers.fallback_reference import FallbackReferenceHandler
 from karaoke_gen.lyrics_transcriber.correction.handlers.levenshtein import LevenshteinHandler
 from karaoke_gen.lyrics_transcriber.correction.handlers.no_space_punct_match import NoSpacePunctuationMatchHandler
 from karaoke_gen.lyrics_transcriber.correction.handlers.relaxed_word_count_match import RelaxedWordCountMatchHandler
@@ -55,6 +56,7 @@ class LyricsCorrector:
             "SyllablesMatchHandler",
             "RelaxedWordCountMatchHandler",
             "NoSpacePunctuationMatchHandler",
+            "FallbackReferenceHandler",
         ]
 
         # Create all handlers but respect enabled_handlers if provided
@@ -68,6 +70,7 @@ class LyricsCorrector:
             ("RepeatCorrectionHandler", RepeatCorrectionHandler(logger=self.logger)),
             ("SoundAlikeHandler", SoundAlikeHandler(logger=self.logger)),
             ("LevenshteinHandler", LevenshteinHandler(logger=self.logger)),
+            ("FallbackReferenceHandler", FallbackReferenceHandler(logger=self.logger)),
         ]
 
         # Store all handler information
@@ -331,6 +334,7 @@ class LyricsCorrector:
             "word_map": word_map,
             "anchor_sequences": self._anchor_sequences,
             "audio_file_hash": metadata.get("audio_file_hash") if metadata else None,
+            "reference_lyrics": self.reference_lyrics,
         }
 
         # Check if we're in agentic-only mode
