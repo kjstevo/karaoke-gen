@@ -188,7 +188,7 @@ class TestLocalPreviewEncodingServiceASSFilter:
         """Test building ASS filter without font."""
         service = LocalPreviewEncodingService()
         result = service._build_ass_filter("/path/to/file.ass")
-        assert result.startswith("ass=")
+        assert result.startswith("ass=f=")  # Must use explicit 'f=' key, not positional
         assert "fontsdir" not in result
 
     def test_build_ass_filter_with_font(self):
@@ -364,6 +364,13 @@ class TestLocalPreviewEncodingServiceEncode:
             assert result.output_path == output_path
             assert result.error is None
             mock_run.assert_called_once()
+            # Verify FFmpeg runs with cwd=ass_dir so the basename-only filter path resolves
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs.get("cwd") == tmpdir
+            # Verify the ass filter uses just the basename (no directory path)
+            cmd_str = " ".join(mock_run.call_args[0][0])
+            assert "subs.ass" in cmd_str
+            assert tmpdir not in cmd_str.split("-vf")[1]  # path not in the filter arg
 
     @patch("subprocess.run")
     def test_encode_preview_ffmpeg_failure(self, mock_run):

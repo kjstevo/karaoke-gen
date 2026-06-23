@@ -205,7 +205,7 @@ class LocalPreviewEncodingService:
             FFmpeg ASS filter string
         """
         escaped_ass_path = self._escape_ffmpeg_filter_path(ass_path)
-        ass_filter = f"ass={escaped_ass_path}"
+        ass_filter = f"ass=f={escaped_ass_path}"
 
         if font_path and os.path.isfile(font_path):
             font_dir = os.path.dirname(font_path)
@@ -339,15 +339,30 @@ class LocalPreviewEncodingService:
             os.makedirs(output_dir, exist_ok=True)
 
         try:
-            # Build and execute FFmpeg command
-            cmd = self._build_preview_ffmpeg_command(config)
-            self.logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+            import dataclasses
+
+            # FFmpeg filter strings can't reliably handle paths with spaces, even with quoting.
+            # Sidestep this entirely: run FFmpeg with cwd=ass_dir and pass just the basename.
+            # The basename is guaranteed space-free by the safe_prefix sanitization in the caller.
+            ass_abs = os.path.abspath(config.ass_path)
+            ass_dir = os.path.dirname(ass_abs)
+            cmd_config = dataclasses.replace(
+                config,
+                ass_path=os.path.basename(ass_abs),
+                audio_path=os.path.abspath(config.audio_path),
+                output_path=os.path.abspath(config.output_path),
+                background_image_path=os.path.abspath(config.background_image_path) if config.background_image_path else None,
+            )
+
+            cmd = self._build_preview_ffmpeg_command(cmd_config)
+            self.logger.debug(f"FFmpeg command (cwd={ass_dir}): {' '.join(cmd)}")
 
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout for preview encoding
+                timeout=300,
+                cwd=ass_dir,
             )
 
             if result.returncode != 0:

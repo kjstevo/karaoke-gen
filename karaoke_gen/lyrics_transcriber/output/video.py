@@ -407,7 +407,7 @@ class VideoGenerator:
     def _build_ass_filter(self, ass_path: str) -> str:
         """Build ASS filter with font directory support."""
         escaped_ass_path = self._escape_ffmpeg_filter_path(ass_path)
-        ass_filter = f"ass={escaped_ass_path}"
+        ass_filter = f"ass=f={escaped_ass_path}"
 
         # Get font path from styles configuration
         karaoke_styles = self.styles.get("karaoke", {})
