@@ -195,14 +195,29 @@ class WhisperTranscriber(BaseTranscriber):
         raw_size = os.path.getsize(wav_path)
         self.logger.info(f"Mono 16kHz WAV size: {raw_size / 1024 / 1024:.1f}MB (base64: ~{raw_size * 4 // 3 / 1024 / 1024:.1f}MB)")
 
+        encode_path = wav_path
+        mime_type = "audio/wav"
+        mp3_path = None
+
         if raw_size * 4 // 3 > self._RUNPOD_MAX_BYTES:
-            self.logger.warning(f"WAV exceeds RunPod limit — audio is unusually long ({raw_size / 1024 / 1024:.1f}MB mono 16kHz)")
+            self.logger.info(f"WAV exceeds 10MB RunPod limit — compressing to mono 16kHz MP3 at 64kbps...")
+            audio = AudioSegment.from_wav(wav_path)
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                mp3_path = tmp.name
+            audio.export(mp3_path, format="mp3", bitrate="64k")
+            mp3_size = os.path.getsize(mp3_path)
+            self.logger.info(f"Compressed MP3: {mp3_size / 1024 / 1024:.1f}MB (base64: ~{mp3_size * 4 // 3 / 1024 / 1024:.1f}MB)")
+            encode_path = mp3_path
+            mime_type = "audio/mpeg"
 
         self.logger.info("Encoding audio as base64...")
-        with open(wav_path, "rb") as f:
+        with open(encode_path, "rb") as f:
             audio_base64 = base64.b64encode(f.read()).decode("utf-8")
 
-        data_uri = f"data:audio/wav;base64,{audio_base64}"
+        if mp3_path and os.path.exists(mp3_path):
+            os.unlink(mp3_path)
+
+        data_uri = f"data:{mime_type};base64,{audio_base64}"
         return data_uri, wav_path
 
     def get_transcription_result(self, job_id: str) -> Dict[str, Any]:

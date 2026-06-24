@@ -341,12 +341,13 @@ class KaraokePrep:
                         separated_audio["combined_instrumentals"][model_name] = filepath
                         self.logger.info(f"Found additional instrumental: {filename}")
         
-        # Also look for backing vocals files
-        backing_vocals_pattern = os.path.join(search_dir, f"{artist_title} (Backing Vocals*.flac")
-        backing_vocals_files = glob.glob(backing_vocals_pattern)
-        backing_vocals_pattern_wav = os.path.join(search_dir, f"{artist_title} (Backing Vocals*.wav")
-        backing_vocals_files.extend(glob.glob(backing_vocals_pattern_wav))
-        
+        # Look for backing vocals files — two naming conventions:
+        # 1. "{artist_title} (Backing Vocals {model}).flac" in track root (legacy)
+        # 2. "stems/{artist_title}_backing_vocals.flac" (current audio_processor output)
+        backing_vocals_files = (
+            glob.glob(os.path.join(search_dir, f"{artist_title} (Backing Vocals*.flac"))
+            + glob.glob(os.path.join(search_dir, f"{artist_title} (Backing Vocals*.wav"))
+        )
         for filepath in backing_vocals_files:
             filename = os.path.basename(filepath)
             model_match = re.search(r'\(Backing Vocals ([^)]+)\)', filename)
@@ -355,6 +356,15 @@ class KaraokePrep:
                 if model_name not in separated_audio["backing_vocals"]:
                     separated_audio["backing_vocals"][model_name] = {"backing_vocals": filepath}
                     self.logger.info(f"Found backing vocals: {filename}")
+
+        # Also check stems/ subdirectory for {artist_title}_backing_vocals.{ext}
+        stems_dir = os.path.join(search_dir, "stems")
+        for ext in ("flac", "wav"):
+            stems_bv = os.path.join(stems_dir, f"{artist_title}_backing_vocals.{ext}")
+            if os.path.exists(stems_bv) and "stems" not in separated_audio["backing_vocals"]:
+                separated_audio["backing_vocals"]["stems"] = {"backing_vocals": stems_bv}
+                self.logger.info(f"Found backing vocals in stems dir: {stems_bv}")
+                break
         
         # Log summary
         clean_count = 1 if separated_audio["clean_instrumental"].get("instrumental") else 0

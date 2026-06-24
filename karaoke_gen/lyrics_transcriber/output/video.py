@@ -231,8 +231,14 @@ class VideoGenerator:
             shutil.copy2(ass_path, temp_ass_path)
             self.logger.debug(f"Created temporary ASS file: {temp_ass_path}")
 
-            cmd = self._build_ffmpeg_command(temp_ass_path, audio_path, output_path)
-            self._run_ffmpeg_command(cmd)
+            # Absolutize audio/output paths before setting cwd — they were relative
+            # to the original working directory, not the cache dir.
+            abs_audio_path = os.path.abspath(audio_path)
+            abs_output_path = os.path.abspath(output_path)
+            # Pass only the basename so FFmpeg's filter string never contains a
+            # Windows drive letter colon ("C:") — FFmpeg resolves it via cwd.
+            cmd = self._build_ffmpeg_command(os.path.basename(temp_ass_path), abs_audio_path, abs_output_path)
+            self._run_ffmpeg_command(cmd, cwd=abs_cache_dir)
             self.logger.info(f"Video generated: {output_path}")
 
             # Clean up temporary file
@@ -500,11 +506,11 @@ class VideoGenerator:
         self.logger.warning("_get_video_codec is deprecated, use self.video_encoder instead")
         return self.video_encoder
 
-    def _run_ffmpeg_command(self, cmd: List[str]) -> None:
+    def _run_ffmpeg_command(self, cmd: List[str], cwd: Optional[str] = None) -> None:
         """Execute FFmpeg command with output handling."""
         self.logger.debug(f"Running FFmpeg command: {' '.join(cmd)}")
         try:
-            output = subprocess.check_output(cmd, universal_newlines=True, stderr=subprocess.STDOUT)
+            output = subprocess.check_output(cmd, universal_newlines=True, stderr=subprocess.STDOUT, cwd=cwd)
             self.logger.debug(f"FFmpeg output: {output}")
         except subprocess.CalledProcessError as e:
             self.logger.error(f"FFmpeg error: {e.output}")

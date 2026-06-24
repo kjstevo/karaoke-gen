@@ -212,6 +212,23 @@ def run_combined_review(
                 break
             backing_vocals_path = None
 
+    # Fallback: when skip_separation is used the dict is empty; scan stems/ directly.
+    # audio_processor names the file {artist_title}_backing_vocals.{ext}
+    # IMPORTANT: track_dir may be relative; after os.chdir(track_dir) CWD is already the track
+    # dir, so os.path.join(track_dir, "stems") would resolve to the wrong nested path.
+    # Use os.getcwd() to get the actual track directory.
+    if not backing_vocals_path:
+        artist_title_stem = f"{track.get('artist', '')} - {track.get('title', '')}"
+        current_dir = os.getcwd()
+        logger.debug(f"Stems fallback: CWD={current_dir}, track_dir param={track_dir}, looking for {artist_title_stem}_backing_vocals")
+        for ext in ("flac", "wav"):
+            candidate = os.path.join(current_dir, "stems", f"{artist_title_stem}_backing_vocals.{ext}")
+            logger.debug(f"Stems fallback: checking {candidate} (exists={os.path.exists(candidate)})")
+            if os.path.exists(candidate):
+                backing_vocals_path = candidate
+                logger.info(f"Found backing vocals via stems fallback: {candidate}")
+                break
+
     clean_instrumental_path = None
     clean_result = separated.get("clean_instrumental", {})
     if isinstance(clean_result, dict) and clean_result.get("instrumental"):
