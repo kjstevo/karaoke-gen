@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -49,6 +48,8 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
                 },
             )
 
+        if output is None:
+            raise TranscriptionError("Replicate force-align returned None output")
         word_list = list(output) if not isinstance(output, list) else output
         if not word_list:
             raise TranscriptionError("Replicate force-align returned empty output")
@@ -72,6 +73,12 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
 
             if not line_aligned:
                 continue
+
+            if len(line_aligned) < line_word_count:
+                self.logger.warning(
+                    f"Line '{line[:40]}' expected {line_word_count} aligned words, "
+                    f"got {len(line_aligned)}. Alignment may be incomplete."
+                )
 
             seg_words = [
                 Word(

@@ -6,6 +6,7 @@ from karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align import (
     ReplicateForceAlignConfig,
     ReplicateForceAlignTranscriber,
 )
+from karaoke_gen.lyrics_transcriber.transcribers.base_transcriber import TranscriptionError
 from karaoke_gen.lyrics_transcriber.types import TranscriptionData
 
 
@@ -103,14 +104,14 @@ def test_convert_result_format_word_text(transcriber):
     assert result.segments[0].words[1].text == "world"
 
 
-def test_convert_result_format_skips_empty_lines():
+def test_convert_result_format_skips_empty_lines(tmp_path):
     """Empty lines in reference text are skipped (no empty segments)."""
     config = ReplicateForceAlignConfig(
         api_token="r8_test",
         reference_text="Hello world\n\nGoodbye world",
     )
     t = ReplicateForceAlignTranscriber(
-        cache_dir="/tmp", config=config, logger=MagicMock()
+        cache_dir=tmp_path, config=config, logger=MagicMock()
     )
     raw_data = {
         "words": [
@@ -160,6 +161,7 @@ def test_perform_transcription_calls_replicate_run(transcriber, tmp_path):
     call_args = mock_client.run.call_args
     assert call_args[0][0] == "cureau/force-align-wordstamps:44dedb84066ba1e00761f45c1003c5c19ed3b12ae9d42c1c1883ca4c016ffa85"
     assert call_args[1]["input"]["text"] == "Hello world\nGoodbye world"
+    assert hasattr(call_args[1]["input"]["audio"], "read")
     assert result == {"words": fake_output}
 
 
@@ -168,10 +170,23 @@ def test_perform_transcription_raises_on_empty_output(transcriber, tmp_path):
     audio_file = tmp_path / "audio.wav"
     audio_file.write_bytes(b"RIFF" + b"\x00" * 40)
 
-    from karaoke_gen.lyrics_transcriber.transcribers.base_transcriber import TranscriptionError
     with patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.replicate") as mock_replicate:
         mock_client = MagicMock()
         mock_replicate.Client.return_value = mock_client
         mock_client.run.return_value = []
         with pytest.raises(TranscriptionError):
             transcriber._perform_transcription(str(audio_file))
+
+
+def test_convert_result_format_partial_alignment_does_not_crash(transcriber):
+    """When fewer aligned words are returned than expected, produces partial segments without raising."""
+    raw_data = {
+        "words": [
+            {"word": "Hello", "start": 0.1, "end": 0.4},
+            # "world" missing — alignment gave only 1 of 2 words for line 1
+        ]
+    }
+    result = transcriber._convert_result_format(raw_data)
+    # First segment has 1 word, second segment is empty (skipped by `if not line_aligned`)
+    assert len(result.segments) == 1
+    assert len(result.segments[0].words) == 1
