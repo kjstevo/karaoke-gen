@@ -189,3 +189,15 @@ class TestInitialization:
             kp.video_generator.parse_region("10,20,300")
         with pytest.raises(ValueError, match="Invalid region format: 10,twenty,300,400. Could not convert to integers. Expected format: 'x,y,width,height'"):
             kp.video_generator.parse_region("10,twenty,300,400")
+
+
+def test_transcriber_config_accepts_replicate_api_token():
+    from karaoke_gen.lyrics_transcriber.core.config import TranscriberConfig
+    config = TranscriberConfig(replicate_api_token="r8_abc123")
+    assert config.replicate_api_token == "r8_abc123"
+
+
+def test_transcriber_config_replicate_api_token_defaults_to_none():
+    from karaoke_gen.lyrics_transcriber.core.config import TranscriberConfig
+    config = TranscriberConfig()
+    assert config.replicate_api_token is None

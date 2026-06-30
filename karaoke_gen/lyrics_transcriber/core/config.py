@@ -10,6 +10,7 @@ class TranscriberConfig:
     audioshake_api_token: Optional[str] = None
     runpod_api_key: Optional[str] = None
     whisper_runpod_id: Optional[str] = None
+    replicate_api_token: Optional[str] = None
 
     # Local Whisper configuration - reads from environment variables with sensible defaults
     # Environment variables: WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_CACHE_DIR, WHISPER_LANGUAGE
