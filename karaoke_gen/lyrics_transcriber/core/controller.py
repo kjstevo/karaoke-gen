@@ -8,6 +8,10 @@ from karaoke_gen.lyrics_transcriber.transcribers.base_transcriber import BaseTra
 from karaoke_gen.lyrics_transcriber.transcribers.audioshake import AudioShakeTranscriber, AudioShakeConfig
 from karaoke_gen.lyrics_transcriber.transcribers.whisper import WhisperTranscriber, WhisperConfig
 from karaoke_gen.lyrics_transcriber.transcribers.local_whisper import LocalWhisperTranscriber, LocalWhisperConfig
+from karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align import (
+    ReplicateForceAlignTranscriber,
+    ReplicateForceAlignConfig,
+)
 from karaoke_gen.lyrics_transcriber.lyrics.base_lyrics_provider import BaseLyricsProvider, LyricsProviderConfig
 from karaoke_gen.lyrics_transcriber.lyrics.genius import GeniusProvider
 from karaoke_gen.lyrics_transcriber.lyrics.spotify import SpotifyProvider
@@ -292,6 +296,33 @@ class LyricsTranscriber:
         """Initialize output generation service."""
         return OutputGenerator(config=self.output_config, logger=self.logger)
 
+    def _inject_replicate_if_applicable(self) -> None:
+        """Replace RunPod Whisper with Replicate force-align when lyrics exist and token is set."""
+        if not self.results.lyrics_results:
+            return
+        if not self.transcriber_config.replicate_api_token:
+            return
+
+        longest = max(self.results.lyrics_results.values(), key=lambda l: len(l.get_full_text()))
+        reference_text = longest.get_full_text()
+
+        self.transcribers.pop("whisper", None)
+        self.transcribers["replicate_force_align"] = {
+            "instance": ReplicateForceAlignTranscriber(
+                cache_dir=self.output_config.cache_dir,
+                config=ReplicateForceAlignConfig(
+                    api_token=self.transcriber_config.replicate_api_token,
+                    reference_text=reference_text,
+                ),
+                logger=self.logger,
+            ),
+            "priority": 2,
+        }
+        self.logger.info(
+            f"Injected ReplicateForceAlign transcriber with {len(reference_text)} chars of reference text "
+            f"(from '{longest.source}'). Removed RunPod Whisper."
+        )
+
     def process(
         self,
         agentic_deadline: Optional[float] = None,
@@ -402,6 +433,9 @@ class LyricsTranscriber:
             self.fetch_lyrics()
         else:
             self.logger.info("Skipping lyrics fetching - no artist/title provided or fetching disabled")
+
+        # Swap in Replicate force-align if lyrics were found and token is configured
+        self._inject_replicate_if_applicable()
 
         # Step 2: Run transcription if enabled
         if self.output_config.run_transcription:
