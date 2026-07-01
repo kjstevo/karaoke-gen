@@ -78,6 +78,10 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
     def _convert_result_format(self, raw_data: Dict[str, Any]) -> TranscriptionData:
         """Convert Replicate word list to TranscriptionData, grouped by reference text lines."""
         aligned_words = raw_data.get("words", [])
+        # Normalize: model may return JSON strings or a list wrapped in a single-element list
+        aligned_words = [json.loads(w) if isinstance(w, str) else w for w in aligned_words]
+        if len(aligned_words) == 1 and isinstance(aligned_words[0], list):
+            aligned_words = aligned_words[0]
         lines = [line for line in self.config.reference_text.splitlines() if line.strip()]
 
         segments: List[LyricsSegment] = []
