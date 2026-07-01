@@ -45,6 +45,8 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
 
         flac_path = audio_filepath + ".replicate_tmp.flac"
         AudioSegment.from_file(audio_filepath).set_channels(1).set_frame_rate(16000).export(flac_path, format="flac")
+        flac_size_mb = os.path.getsize(flac_path) / (1024 * 1024)
+        self.logger.info(f"Uploading mono 16kHz FLAC ({flac_size_mb:.1f} MB) to Replicate")
         try:
             with open(flac_path, "rb") as audio_file:
                 output = client.run(
