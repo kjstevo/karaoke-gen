@@ -64,6 +64,9 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
         self.logger.info(f"Uploading mono 16kHz FLAC ({flac_size_mb:.1f} MB) to Replicate")
         try:
             with open(flac_path, "rb") as audio_file:
+                # wait=False avoids the 60-second per-request read timeout that
+                # client.run() adds when wait=True (Prefer: wait header). The
+                # model takes several minutes so we need to poll instead.
                 output = client.run(
                     MODEL_VERSION,
                     input={
@@ -71,6 +74,7 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
                         "transcript": self.config.reference_text,
                         "show_probabilities": True,
                     },
+                    wait=False,
                 )
         finally:
             if os.path.exists(flac_path):
