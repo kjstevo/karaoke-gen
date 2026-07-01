@@ -43,8 +43,8 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
             output = client.run(
                 MODEL_VERSION,
                 input={
-                    "audio": audio_file,
-                    "text": self.config.reference_text,
+                    "audio_file": audio_file,
+                    "transcript": self.config.reference_text,
                 },
             )
 
