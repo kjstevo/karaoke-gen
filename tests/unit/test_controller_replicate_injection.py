@@ -1,6 +1,6 @@
 """Tests for Replicate transcriber injection in controller.process()."""
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from karaoke_gen.lyrics_transcriber.core.controller import LyricsTranscriber
 from karaoke_gen.lyrics_transcriber.core.config import TranscriberConfig, LyricsConfig, OutputConfig
 from karaoke_gen.lyrics_transcriber.types import LyricsData, LyricsSegment, LyricsMetadata
@@ -129,3 +129,26 @@ def test_audioshake_untouched_when_replicate_injected(controller):
 
     assert "audioshake" in controller.transcribers
     assert controller.transcribers["audioshake"] is mock_audioshake
+
+
+def test_replicate_not_injected_when_lyrics_text_empty(controller):
+    """Replicate transcriber is NOT injected when all lyrics sources have empty text."""
+    from karaoke_gen.lyrics_transcriber.utils.word_utils import WordUtils
+    from karaoke_gen.lyrics_transcriber.types import LyricsSegment, LyricsMetadata, LyricsData
+    empty_segment = LyricsSegment(
+        id=WordUtils.generate_id(),
+        text="",
+        words=[],
+        start_time=0.0,
+        end_time=0.0,
+    )
+    empty_lyrics = LyricsData(
+        segments=[empty_segment],
+        metadata=LyricsMetadata(source="lrclib", track_name="Test", artist_names=["Test"]),
+        source="lrclib",
+    )
+    controller.results.lyrics_results = {"lrclib": empty_lyrics}
+    controller._inject_replicate_if_applicable()
+
+    assert "replicate_force_align" not in controller.transcribers
+    assert "whisper" in controller.transcribers

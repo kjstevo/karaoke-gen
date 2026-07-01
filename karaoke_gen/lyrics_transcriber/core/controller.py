@@ -306,7 +306,11 @@ class LyricsTranscriber:
         longest = max(self.results.lyrics_results.values(), key=lambda l: len(l.get_full_text()))
         reference_text = longest.get_full_text()
 
-        self.transcribers.pop("whisper", None)
+        if not reference_text.strip():
+            self.logger.warning("Longest reference lyrics text is empty — skipping Replicate injection")
+            return
+
+        removed = self.transcribers.pop("whisper", None)
         self.transcribers["replicate_force_align"] = {
             "instance": ReplicateForceAlignTranscriber(
                 cache_dir=self.output_config.cache_dir,
@@ -318,9 +322,10 @@ class LyricsTranscriber:
             ),
             "priority": 2,
         }
+        removed_note = " Removed RunPod Whisper." if removed else ""
         self.logger.info(
             f"Injected ReplicateForceAlign transcriber with {len(reference_text)} chars of reference text "
-            f"(from '{longest.source}'). Removed RunPod Whisper."
+            f"(from '{longest.source}').{removed_note}"
         )
 
     def process(
