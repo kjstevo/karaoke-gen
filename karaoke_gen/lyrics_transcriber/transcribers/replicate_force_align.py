@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import json
 import logging
 import os
 from pathlib import Path
@@ -63,6 +64,13 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
         word_list = list(output) if not isinstance(output, list) else output
         if not word_list:
             raise TranscriptionError("Replicate force-align returned empty output")
+
+        # Model may return items as JSON strings; normalize to dicts
+        word_list = [json.loads(w) if isinstance(w, str) else w for w in word_list]
+
+        # Model may return the entire word list wrapped in a single-element list
+        if len(word_list) == 1 and isinstance(word_list[0], list):
+            word_list = word_list[0]
 
         self.logger.info(f"Replicate returned {len(word_list)} aligned words")
         return {"words": word_list}
