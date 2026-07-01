@@ -38,6 +38,21 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
     def get_name(self) -> str:
         return "ReplicateForceAlign"
 
+    @staticmethod
+    def _normalize_word_list(words: List[Any]) -> List[Any]:
+        """Parse JSON string items and unwrap single-element list-of-list; skip empty strings."""
+        result = []
+        for w in words:
+            if isinstance(w, str):
+                w = w.strip()
+                if not w:
+                    continue
+                w = json.loads(w)
+            result.append(w)
+        if len(result) == 1 and isinstance(result[0], list):
+            result = result[0]
+        return result
+
     def _perform_transcription(self, audio_filepath: str) -> Dict[str, Any]:
         """Call Replicate force-align API with audio file and reference text."""
         self.logger.info(f"Calling Replicate force-align for {audio_filepath}")
@@ -67,12 +82,7 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
         if not word_list:
             raise TranscriptionError("Replicate force-align returned empty output")
 
-        # Model may return items as JSON strings; normalize to dicts
-        word_list = [json.loads(w) if isinstance(w, str) else w for w in word_list]
-
-        # Model may return the entire word list wrapped in a single-element list
-        if len(word_list) == 1 and isinstance(word_list[0], list):
-            word_list = word_list[0]
+        word_list = self._normalize_word_list(word_list)
 
         self.logger.info(f"Replicate returned {len(word_list)} aligned words")
         return {"words": word_list}
@@ -80,15 +90,7 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
     def _convert_result_format(self, raw_data: Dict[str, Any]) -> TranscriptionData:
         """Convert Replicate word list to TranscriptionData, grouped by reference text lines."""
         aligned_words = raw_data.get("words", [])
-        # Normalize: model may return JSON strings; skip empty strings from stale cache
-        def _parse(w):
-            if isinstance(w, str):
-                w = w.strip()
-                return json.loads(w) if w else None
-            return w
-        aligned_words = [x for x in (_parse(w) for w in aligned_words) if x is not None]
-        if len(aligned_words) == 1 and isinstance(aligned_words[0], list):
-            aligned_words = aligned_words[0]
+        aligned_words = self._normalize_word_list(aligned_words)
         lines = [line for line in self.config.reference_text.splitlines() if line.strip()]
 
         segments: List[LyricsSegment] = []
