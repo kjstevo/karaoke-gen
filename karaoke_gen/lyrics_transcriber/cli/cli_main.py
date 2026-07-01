@@ -139,6 +139,7 @@ def get_config_from_env() -> Dict[str, str]:
         "spotify_cookie": os.getenv("SPOTIFY_COOKIE_SP_DC"),
         "runpod_api_key": os.getenv("RUNPOD_API_KEY"),
         "whisper_runpod_id": os.getenv("WHISPER_RUNPOD_ID"),
+        "replicate_api_token": os.getenv("REPLICATE_API_TOKEN"),
     }
 
 
@@ -163,6 +164,7 @@ def create_configs(args: argparse.Namespace, env_config: Dict[str, str]) -> tupl
         audioshake_api_token=args.audioshake_api_token or env_config.get("audioshake_api_token"),
         runpod_api_key=args.runpod_api_key or env_config.get("runpod_api_key"),
         whisper_runpod_id=args.whisper_runpod_id or env_config.get("whisper_runpod_id"),
+        replicate_api_token=env_config.get("replicate_api_token"),
     )
 
     lyrics_config = LyricsConfig(

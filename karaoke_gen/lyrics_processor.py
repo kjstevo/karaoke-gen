@@ -362,6 +362,7 @@ class LyricsProcessor:
             "runpod_api_key": os.getenv("RUNPOD_API_KEY"),
             "whisper_runpod_id": os.getenv("WHISPER_RUNPOD_ID"),
             "rapidapi_key": os.getenv("RAPIDAPI_KEY"),  # Add missing RAPIDAPI_KEY
+            "replicate_api_token": os.getenv("REPLICATE_API_TOKEN"),
         }
 
         # Create config objects for LyricsTranscriber
@@ -369,6 +370,7 @@ class LyricsProcessor:
             audioshake_api_token=env_config.get("audioshake_api_token"),
             runpod_api_key=env_config.get("runpod_api_key"),
             whisper_runpod_id=env_config.get("whisper_runpod_id"),
+            replicate_api_token=env_config.get("replicate_api_token"),
             # Local Whisper is enabled by default as a fallback when no cloud providers are configured
             enable_local_whisper=True,
         )
