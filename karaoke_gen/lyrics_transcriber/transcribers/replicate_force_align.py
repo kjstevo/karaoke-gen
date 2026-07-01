@@ -82,6 +82,10 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
         if not word_list:
             raise TranscriptionError("Replicate force-align returned empty output")
 
+        self.logger.info(
+            f"Replicate raw output: {len(word_list)} items, "
+            f"first item type={type(word_list[0]).__name__}, repr={repr(word_list[0])[:200]}"
+        )
         word_list = self._normalize_word_list(word_list)
 
         self.logger.info(f"Replicate returned {len(word_list)} aligned words")
