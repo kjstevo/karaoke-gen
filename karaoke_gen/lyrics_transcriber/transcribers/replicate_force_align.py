@@ -45,6 +45,7 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
                 input={
                     "audio_file": audio_file,
                     "transcript": self.config.reference_text,
+                    "show_probabilities": True,
                 },
             )
 
