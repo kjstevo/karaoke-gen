@@ -144,12 +144,14 @@ def test_perform_transcription_calls_replicate_run(transcriber, tmp_path):
     audio_file = tmp_path / "audio.wav"
     audio_file.write_bytes(b"RIFF" + b"\x00" * 40)
 
-    fake_output = [
-        {"word": "Hello", "start": 0.1, "end": 0.4},
-        {"word": "world", "start": 0.5, "end": 0.9},
-        {"word": "Goodbye", "start": 1.0, "end": 1.3},
-        {"word": "world", "start": 1.4, "end": 1.8},
+    word_stamps = [
+        {"word": "Hello", "start": 0.1, "end": 0.4, "probability": 0.9},
+        {"word": "world", "start": 0.5, "end": 0.9, "probability": 0.8},
+        {"word": "Goodbye", "start": 1.0, "end": 1.3, "probability": 0.95},
+        {"word": "world", "start": 1.4, "end": 1.8, "probability": 0.85},
     ]
+    # Model returns a dict with "wordstamps" key
+    fake_output = {"wordstamps": word_stamps}
 
     flac_path = str(audio_file) + ".replicate_tmp.flac"
 
@@ -169,7 +171,7 @@ def test_perform_transcription_calls_replicate_run(transcriber, tmp_path):
     assert call_args[0][0] == "cureau/force-align-wordstamps:44dedb84066ba1e00761f45c1003c5c19ed3b12ae9d42c1c1883ca4c016ffa85"
     assert call_args[1]["input"]["transcript"] == "Hello world\nGoodbye world"
     assert hasattr(call_args[1]["input"]["audio_file"], "read")
-    assert result == {"words": fake_output}
+    assert result == {"words": word_stamps}
 
 
 def test_perform_transcription_raises_on_empty_output(transcriber, tmp_path):
@@ -186,7 +188,7 @@ def test_perform_transcription_raises_on_empty_output(transcriber, tmp_path):
         mock_seg.from_file.return_value.set_channels.return_value.set_frame_rate.return_value.export.side_effect = write_stub_flac
         mock_client = MagicMock()
         mock_replicate.Client.return_value = mock_client
-        mock_client.run.return_value = []
+        mock_client.run.return_value = {"wordstamps": []}
         with pytest.raises(TranscriptionError):
             transcriber._perform_transcription(str(audio_file))
 

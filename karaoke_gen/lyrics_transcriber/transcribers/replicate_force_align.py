@@ -78,14 +78,15 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
 
         if output is None:
             raise TranscriptionError("Replicate force-align returned None output")
+
+        # Model returns {"wordstamps": [...]} dict, not a bare list
+        if isinstance(output, dict):
+            output = output.get("wordstamps", [])
+
         word_list = list(output) if not isinstance(output, list) else output
         if not word_list:
             raise TranscriptionError("Replicate force-align returned empty output")
 
-        self.logger.info(
-            f"Replicate raw output: {len(word_list)} items, "
-            f"first item type={type(word_list[0]).__name__}, repr={repr(word_list[0])[:200]}"
-        )
         word_list = self._normalize_word_list(word_list)
 
         self.logger.info(f"Replicate returned {len(word_list)} aligned words")
@@ -121,7 +122,7 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
                     text=w["word"],
                     start_time=w["start"],
                     end_time=w["end"],
-                    confidence=w.get("score"),
+                    confidence=w.get("probability"),
                 )
                 for w in line_aligned
             ]
