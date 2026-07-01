@@ -151,7 +151,9 @@ def test_perform_transcription_calls_replicate_run(transcriber, tmp_path):
         {"word": "world", "start": 1.4, "end": 1.8},
     ]
 
-    with patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.replicate") as mock_replicate:
+    with patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.replicate") as mock_replicate, \
+         patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.AudioProcessor") as mock_ap:
+        mock_ap.return_value.to_mono_16k_wav.return_value = str(audio_file)
         mock_client = MagicMock()
         mock_replicate.Client.return_value = mock_client
         mock_client.run.return_value = fake_output
@@ -170,7 +172,9 @@ def test_perform_transcription_raises_on_empty_output(transcriber, tmp_path):
     audio_file = tmp_path / "audio.wav"
     audio_file.write_bytes(b"RIFF" + b"\x00" * 40)
 
-    with patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.replicate") as mock_replicate:
+    with patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.replicate") as mock_replicate, \
+         patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.AudioProcessor") as mock_ap:
+        mock_ap.return_value.to_mono_16k_wav.return_value = str(audio_file)
         mock_client = MagicMock()
         mock_replicate.Client.return_value = mock_client
         mock_client.run.return_value = []

@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from karaoke_gen.lyrics_transcriber.transcribers.base_transcriber import BaseTranscriber, TranscriptionError
+from karaoke_gen.lyrics_transcriber.transcribers.whisper import AudioProcessor
 from karaoke_gen.lyrics_transcriber.types import TranscriptionData, LyricsSegment, Word
 from karaoke_gen.lyrics_transcriber.utils.word_utils import WordUtils
 import replicate
@@ -39,15 +41,20 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
         self.logger.info(f"Calling Replicate force-align for {audio_filepath}")
         client = replicate.Client(api_token=self.config.api_token)
 
-        with open(audio_filepath, "rb") as audio_file:
-            output = client.run(
-                MODEL_VERSION,
-                input={
-                    "audio_file": audio_file,
-                    "transcript": self.config.reference_text,
-                    "show_probabilities": True,
-                },
-            )
+        wav_path = AudioProcessor(self.logger).to_mono_16k_wav(audio_filepath)
+        try:
+            with open(wav_path, "rb") as audio_file:
+                output = client.run(
+                    MODEL_VERSION,
+                    input={
+                        "audio_file": audio_file,
+                        "transcript": self.config.reference_text,
+                        "show_probabilities": True,
+                    },
+                )
+        finally:
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
 
         if output is None:
             raise TranscriptionError("Replicate force-align returned None output")
