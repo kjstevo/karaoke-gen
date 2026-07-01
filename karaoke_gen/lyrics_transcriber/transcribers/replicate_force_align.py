@@ -4,8 +4,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from pydub import AudioSegment
+
 from karaoke_gen.lyrics_transcriber.transcribers.base_transcriber import BaseTranscriber, TranscriptionError
-from karaoke_gen.lyrics_transcriber.transcribers.whisper import AudioProcessor
 from karaoke_gen.lyrics_transcriber.types import TranscriptionData, LyricsSegment, Word
 from karaoke_gen.lyrics_transcriber.utils.word_utils import WordUtils
 import replicate
@@ -41,9 +42,10 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
         self.logger.info(f"Calling Replicate force-align for {audio_filepath}")
         client = replicate.Client(api_token=self.config.api_token)
 
-        wav_path = AudioProcessor(self.logger).to_mono_16k_wav(audio_filepath)
+        flac_path = audio_filepath + ".replicate_tmp.flac"
+        AudioSegment.from_file(audio_filepath).set_channels(1).set_frame_rate(16000).export(flac_path, format="flac")
         try:
-            with open(wav_path, "rb") as audio_file:
+            with open(flac_path, "rb") as audio_file:
                 output = client.run(
                     MODEL_VERSION,
                     input={
@@ -53,8 +55,8 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
                     },
                 )
         finally:
-            if os.path.exists(wav_path):
-                os.remove(wav_path)
+            if os.path.exists(flac_path):
+                os.remove(flac_path)
 
         if output is None:
             raise TranscriptionError("Replicate force-align returned None output")

@@ -151,9 +151,14 @@ def test_perform_transcription_calls_replicate_run(transcriber, tmp_path):
         {"word": "world", "start": 1.4, "end": 1.8},
     ]
 
-    with patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.replicate") as mock_replicate, \
-         patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.AudioProcessor") as mock_ap:
-        mock_ap.return_value.to_mono_16k_wav.return_value = str(audio_file)
+    flac_path = str(audio_file) + ".replicate_tmp.flac"
+
+    def write_stub_flac(*args, **kwargs):
+        open(flac_path, "wb").close()
+
+    with patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.AudioSegment") as mock_seg, \
+         patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.replicate") as mock_replicate:
+        mock_seg.from_file.return_value.set_channels.return_value.set_frame_rate.return_value.export.side_effect = write_stub_flac
         mock_client = MagicMock()
         mock_replicate.Client.return_value = mock_client
         mock_client.run.return_value = fake_output
@@ -171,10 +176,14 @@ def test_perform_transcription_raises_on_empty_output(transcriber, tmp_path):
     """Raises TranscriptionError if Replicate returns empty list."""
     audio_file = tmp_path / "audio.wav"
     audio_file.write_bytes(b"RIFF" + b"\x00" * 40)
+    flac_path = str(audio_file) + ".replicate_tmp.flac"
 
-    with patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.replicate") as mock_replicate, \
-         patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.AudioProcessor") as mock_ap:
-        mock_ap.return_value.to_mono_16k_wav.return_value = str(audio_file)
+    def write_stub_flac(*args, **kwargs):
+        open(flac_path, "wb").close()
+
+    with patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.AudioSegment") as mock_seg, \
+         patch("karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align.replicate") as mock_replicate:
+        mock_seg.from_file.return_value.set_channels.return_value.set_frame_rate.return_value.export.side_effect = write_stub_flac
         mock_client = MagicMock()
         mock_replicate.Client.return_value = mock_client
         mock_client.run.return_value = []
