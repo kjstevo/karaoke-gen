@@ -164,7 +164,7 @@ def test_perform_transcription_calls_replicate_run(transcriber, tmp_path):
         mock_client.run.return_value = fake_output
         result = transcriber._perform_transcription(str(audio_file))
 
-    mock_replicate.Client.assert_called_once_with(api_token="r8_test")
+    mock_replicate.Client.assert_called_once_with(api_token="r8_test", timeout=600.0)
     call_args = mock_client.run.call_args
     assert call_args[0][0] == "cureau/force-align-wordstamps:44dedb84066ba1e00761f45c1003c5c19ed3b12ae9d42c1c1883ca4c016ffa85"
     assert call_args[1]["input"]["transcript"] == "Hello world\nGoodbye world"
