@@ -41,7 +41,7 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
     def _perform_transcription(self, audio_filepath: str) -> Dict[str, Any]:
         """Call Replicate force-align API with audio file and reference text."""
         self.logger.info(f"Calling Replicate force-align for {audio_filepath}")
-        client = replicate.Client(api_token=self.config.api_token)
+        client = replicate.Client(api_token=self.config.api_token, timeout=600.0)
 
         flac_path = audio_filepath + ".replicate_tmp.flac"
         AudioSegment.from_file(audio_filepath).set_channels(1).set_frame_rate(16000).export(flac_path, format="flac")
@@ -78,8 +78,13 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
     def _convert_result_format(self, raw_data: Dict[str, Any]) -> TranscriptionData:
         """Convert Replicate word list to TranscriptionData, grouped by reference text lines."""
         aligned_words = raw_data.get("words", [])
-        # Normalize: model may return JSON strings or a list wrapped in a single-element list
-        aligned_words = [json.loads(w) if isinstance(w, str) else w for w in aligned_words]
+        # Normalize: model may return JSON strings; skip empty strings from stale cache
+        def _parse(w):
+            if isinstance(w, str):
+                w = w.strip()
+                return json.loads(w) if w else None
+            return w
+        aligned_words = [x for x in (_parse(w) for w in aligned_words) if x is not None]
         if len(aligned_words) == 1 and isinstance(aligned_words[0], list):
             aligned_words = aligned_words[0]
         lines = [line for line in self.config.reference_text.splitlines() if line.strip()]
