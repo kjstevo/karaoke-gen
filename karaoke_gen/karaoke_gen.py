@@ -913,8 +913,9 @@ class KaraokePrep:
             processed_track["title_image_jpg"] = f"{output_image_filepath_noext}.jpg"
             processed_track["title_video"] = os.path.join(track_output_dir, f"{artist_title} (Title).mov")
 
-            # Use FileHandler._file_exists
-            if not self.file_handler._file_exists(processed_track["title_video"]) and not os.environ.get("KARAOKE_GEN_SKIP_TITLE_END_SCREENS"):
+            # Use FileHandler._valid_video_exists so a truncated file from an interrupted
+            # previous run isn't mistaken for a valid cached result
+            if not self.file_handler._valid_video_exists(processed_track["title_video"]) and not os.environ.get("KARAOKE_GEN_SKIP_TITLE_END_SCREENS"):
                 self.logger.info(f"Creating title video...")
                 # Delegate to VideoGenerator
                 self.video_generator.create_title_video(
@@ -932,8 +933,9 @@ class KaraokePrep:
             processed_track["end_image_jpg"] = f"{output_image_filepath_noext}.jpg"
             processed_track["end_video"] = os.path.join(track_output_dir, f"{artist_title} (End).mov")
 
-            # Use FileHandler._file_exists
-            if not self.file_handler._file_exists(processed_track["end_video"]) and not os.environ.get("KARAOKE_GEN_SKIP_TITLE_END_SCREENS"):
+            # Use FileHandler._valid_video_exists so a truncated file from an interrupted
+            # previous run isn't mistaken for a valid cached result
+            if not self.file_handler._valid_video_exists(processed_track["end_video"]) and not os.environ.get("KARAOKE_GEN_SKIP_TITLE_END_SCREENS"):
                 self.logger.info(f"Creating end screen video...")
                  # Delegate to VideoGenerator
                 self.video_generator.create_end_video(

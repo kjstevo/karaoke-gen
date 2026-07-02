@@ -160,6 +160,34 @@ class TestFileOperations:
             with pytest.raises(Exception, match=f"No valid audio stream found in file: {input_filename}"):
                 basic_karaoke_gen.file_handler.convert_to_wav(input_filename, output_filename)
     
+    def test_valid_video_exists_file_missing(self, basic_karaoke_gen):
+        """A file that doesn't exist is never treated as a valid cached video."""
+        with patch('os.path.isfile', return_value=False):
+            assert basic_karaoke_gen.file_handler._valid_video_exists("missing.mov") is False
+
+    def test_valid_video_exists_valid_video(self, basic_karaoke_gen):
+        """A complete video file with a video stream is treated as valid and skipped."""
+        with patch('os.path.isfile', return_value=True), \
+             patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="video\n")
+
+            assert basic_karaoke_gen.file_handler._valid_video_exists("title.mov") is True
+
+    def test_valid_video_exists_truncated_video(self, basic_karaoke_gen):
+        """A truncated/corrupt video file (e.g. missing moov atom) is not treated as valid,
+        so an interrupted previous run doesn't get silently reused."""
+        with patch('os.path.isfile', return_value=True), \
+             patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="")
+
+            assert basic_karaoke_gen.file_handler._valid_video_exists("title.mov") is False
+
+    def test_valid_video_exists_ffprobe_missing(self, basic_karaoke_gen):
+        """If ffprobe isn't available, fall back to trusting the existing file rather than failing."""
+        with patch('os.path.isfile', return_value=True), \
+             patch('subprocess.run', side_effect=FileNotFoundError):
+            assert basic_karaoke_gen.file_handler._valid_video_exists("title.mov") is True
+
     def test_sanitize_filename(self, basic_karaoke_gen):
         """Test sanitizing filenames."""
         # Test with various problematic characters

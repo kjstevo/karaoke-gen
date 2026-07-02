@@ -2,6 +2,7 @@ import os
 import glob
 import logging
 import shutil
+import subprocess
 import tempfile
 from .utils import sanitize_filename
 
@@ -26,6 +27,35 @@ class FileHandler:
         if exists:
             self.logger.info(f"File already exists, skipping creation: {file_path}")
         return exists
+
+    def _valid_video_exists(self, file_path):
+        """
+        Check if a video file exists and is a complete, readable video (not truncated).
+
+        A generation run that gets interrupted mid-encode (crash, Ctrl+C, etc.) can leave
+        a non-empty but corrupt video file on disk (e.g. missing moov atom). A resumed run
+        must not mistake that for a valid cached result, since it would be passed on to
+        later ffmpeg steps and fail there instead.
+        """
+        if not os.path.isfile(file_path):
+            return False
+
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", file_path],
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            self.logger.warning("ffprobe not found on PATH, cannot validate cached video file, assuming valid")
+            return True
+
+        if result.returncode != 0 or "video" not in result.stdout:
+            self.logger.warning(f"Existing file is not a valid video, will regenerate: {file_path}")
+            return False
+
+        self.logger.info(f"File already exists, skipping creation: {file_path}")
+        return True
 
     # Placeholder methods - to be filled by user moving code
     def copy_input_media(self, input_media, output_filename_no_extension):
