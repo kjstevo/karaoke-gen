@@ -94,11 +94,11 @@ class ReviewServer:
             with_backing_path: Path to instrumental with backing vocals
             backing_vocals_path: Path to backing vocals audio file
         """
-        self.correction_result = correction_result
         self.output_config = output_config
         self.audio_filepath = audio_filepath
         self.logger = logger or logging.getLogger(__name__)
         self.review_completed = False
+        self.correction_result = self._apply_resegmentation(correction_result)
         self.corrections_saved = False  # Flag for intermediate save (before instrumental review)
         self.pending_corrections: Optional[Dict[str, Any]] = None  # Store corrections until final submission
 
@@ -147,6 +147,28 @@ class ReviewServer:
             self._langfuse = setup_langfuse("agentic-corrector")
         except Exception:
             self._langfuse = None
+
+    def _apply_resegmentation(self, correction_result: CorrectionResult) -> CorrectionResult:
+        """Replace corrected_segments with reference-guided resegmented lines.
+
+        Called on init and after any operation that regenerates corrected_segments
+        (handler changes, new lyrics sources) so the review UI always shows lines
+        aligned to the reference rather than raw Whisper blobs.
+        """
+        from karaoke_gen.lyrics_transcriber.output.segment_resizer import resegment_by_reference
+
+        if not correction_result.reference_lyrics or not correction_result.corrected_segments:
+            return correction_result
+
+        resegmented = resegment_by_reference(
+            correction_result.corrected_segments,
+            correction_result.reference_lyrics,
+            correction_result.anchor_sequences,
+            gap_sequences=correction_result.gap_sequences,
+            logger=self.logger,
+        )
+        correction_result.corrected_segments = resegmented
+        return correction_result
 
     def _configure_cors(self) -> None:
         """Configure CORS middleware."""
@@ -1160,11 +1182,13 @@ class ReviewServer:
         """Update enabled correction handlers and rerun correction."""
         try:
             # Use shared operation for handler updates
-            self.correction_result = CorrectionOperations.update_correction_handlers(
-                correction_result=self.correction_result,
-                enabled_handlers=enabled_handlers,
-                cache_dir=self.output_config.cache_dir,
-                logger=self.logger
+            self.correction_result = self._apply_resegmentation(
+                CorrectionOperations.update_correction_handlers(
+                    correction_result=self.correction_result,
+                    enabled_handlers=enabled_handlers,
+                    cache_dir=self.output_config.cache_dir,
+                    logger=self.logger,
+                )
             )
 
             return {"status": "success", "data": self.correction_result.to_dict()}
@@ -1238,12 +1262,14 @@ class ReviewServer:
             self.logger.info(f"Received request to add lyrics source '{source}' with {len(lyrics_text)} characters")
 
             # Use shared operation for adding lyrics source
-            self.correction_result = CorrectionOperations.add_lyrics_source(
-                correction_result=self.correction_result,
-                source=source,
-                lyrics_text=lyrics_text,
-                cache_dir=self.output_config.cache_dir,
-                logger=self.logger
+            self.correction_result = self._apply_resegmentation(
+                CorrectionOperations.add_lyrics_source(
+                    correction_result=self.correction_result,
+                    source=source,
+                    lyrics_text=lyrics_text,
+                    cache_dir=self.output_config.cache_dir,
+                    logger=self.logger,
+                )
             )
 
             return {"status": "success", "data": self.correction_result.to_dict()}
@@ -1310,11 +1336,11 @@ class ReviewServer:
                         updated_result.metadata = {}
                     updated_result.metadata["audio_hash"] = preserved_hash
 
-            self.correction_result = updated_result
+            self.correction_result = self._apply_resegmentation(updated_result)
 
             return {
                 "status": "success",
-                "data": updated_result.to_dict(),
+                "data": self.correction_result.to_dict(),
                 "sources_added": sources_added,
                 "sources_rejected": sources_rejected,
                 "sources_not_found": sources_not_found,

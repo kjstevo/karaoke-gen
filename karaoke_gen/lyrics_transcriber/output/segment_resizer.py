@@ -1,9 +1,345 @@
 import logging
 import re
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from karaoke_gen.lyrics_transcriber.types import LyricsSegment, Word
+from karaoke_gen.lyrics_transcriber.types import LyricsData, LyricsSegment, Word
 from karaoke_gen.lyrics_transcriber.utils.word_utils import WordUtils
+
+
+def resegment_by_reference(
+    corrected_segments: List[LyricsSegment],
+    reference_lyrics: Dict[str, LyricsData],
+    anchor_sequences: List[Any],
+    gap_sequences: Optional[List[Any]] = None,
+    logger: Optional[logging.Logger] = None,
+) -> List[LyricsSegment]:
+    """Re-segment corrected lyrics to follow reference line boundaries.
+
+    Primary strategy: use anchor sequences (exact word-to-line mapping) and
+    gap sequences (proportional reference-word distribution) to assign each
+    corrected word to the correct reference line without depending on timing.
+    Fallback: time-based assignment when reference has synced timestamps.
+    Returns original segments unchanged if no improvement is found.
+    """
+    log = logger or logging.getLogger(__name__)
+
+    all_words = [w for seg in corrected_segments for w in seg.words]
+    if not all_words or not reference_lyrics:
+        return corrected_segments
+
+    # Prefer synced (timed) reference sources; otherwise use any available
+    ref_data: Optional[LyricsData] = None
+    for data in reference_lyrics.values():
+        if data.metadata.is_synced and data.segments:
+            ref_data = data
+            break
+    if ref_data is None:
+        ref_data = next(iter(reference_lyrics.values()), None)
+
+    if not ref_data or not ref_data.segments:
+        return corrected_segments
+
+    ref_segs = ref_data.segments
+
+    # Primary: anchor + gap assignment (no timing at anchors; time-based for large gaps)
+    result = _resegment_by_anchor_and_gaps(
+        all_words, ref_segs, anchor_sequences, gap_sequences or [], ref_data.source, log,
+        ref_is_synced=ref_data.metadata.is_synced,
+    )
+    if result:
+        log.info(f"Reference resegmentation (anchor+gap): {len(corrected_segments)} → {len(result)} segments")
+        return result
+
+    # Fallback: time-based (requires synced reference with line timestamps)
+    if ref_data.metadata.is_synced:
+        result = _resegment_by_time(all_words, ref_segs, log)
+        if result:
+            log.info(f"Reference resegmentation (time-based): {len(corrected_segments)} → {len(result)} segments")
+            return result
+
+    log.debug("Reference resegmentation: no improvement found, keeping original segments")
+    return corrected_segments
+
+
+def _resegment_by_anchor_and_gaps(
+    all_words: List[Word],
+    ref_segments: List[LyricsSegment],
+    anchor_sequences: List[Any],
+    gap_sequences: List[Any],
+    source: str,
+    logger: logging.Logger,
+    ref_is_synced: bool = False,
+) -> Optional[List[LyricsSegment]]:
+    """Assign words using exact anchor mappings and gap interpolation.
+
+    Anchor words: exact 1:1 trans↔ref mapping, no timestamps used.
+    Gap words: time-based when the gap spans many reference lines (avoids the
+      sparse-proportional problem); proportional otherwise.
+    Non-monotonic anchors (repeat-section detection artefacts that point back to
+    earlier reference positions) are filtered out to prevent scrambled output.
+    """
+    # Map reference word ID → segment index
+    ref_word_to_seg: Dict[str, int] = {}
+    for seg_idx, seg in enumerate(ref_segments):
+        for word in seg.words:
+            ref_word_to_seg[word.id] = seg_idx
+
+    # Map transcribed word ID → position index in all_words
+    trans_id_to_idx: Dict[str, int] = {w.id: i for i, w in enumerate(all_words)}
+
+    assignments: List[Optional[int]] = [None] * len(all_words)
+
+    # Assign anchor words exactly (1:1 trans↔ref mapping).
+    # Process in transcription order and skip non-monotonic anchors — these arise
+    # when repeat-section detection maps a later transcription position back to an
+    # earlier reference position (e.g. a chorus occurrence matched to the first
+    # chorus slot in the reference), producing scrambled output.
+    sorted_anchors = sorted(
+        anchor_sequences,
+        key=lambda item: (item.anchor if hasattr(item, "anchor") else item).transcription_position,
+    )
+    last_max_ref_seg = -1
+    for item in sorted_anchors:
+        anchor = item.anchor if hasattr(item, "anchor") else item
+        if source not in anchor.reference_word_ids:
+            continue
+        ref_ids = anchor.reference_word_ids[source]
+        valid_segs = [ref_word_to_seg[rid] for rid in ref_ids if rid in ref_word_to_seg]
+        if not valid_segs:
+            continue
+        if min(valid_segs) < last_max_ref_seg:
+            logger.debug(
+                f"Skipping non-monotonic anchor at trans_pos={anchor.transcription_position} "
+                f"(min_ref_seg={min(valid_segs)} < prev_max={last_max_ref_seg})"
+            )
+            continue
+        last_max_ref_seg = max(valid_segs)
+        for trans_id, ref_id in zip(anchor.transcribed_word_ids, ref_ids):
+            idx = trans_id_to_idx.get(trans_id)
+            seg_idx = ref_word_to_seg.get(ref_id)
+            if idx is not None and seg_idx is not None:
+                assignments[idx] = seg_idx
+
+    if not any(a is not None for a in assignments):
+        return None
+
+    # Build time boundaries for ref segments (used for synced-reference gap assignment)
+    if ref_is_synced:
+        boundaries = [
+            (seg.start_time, ref_segments[i + 1].start_time if i + 1 < len(ref_segments) else float("inf"))
+            for i, seg in enumerate(ref_segments)
+        ]
+    else:
+        boundaries = []
+
+    # Assign gap words.
+    # Use time-based assignment when the reference is synced and the gap spans
+    # more than 3 reference lines — proportional produces too few output lines when
+    # a handful of transcribed words must cover many reference lines.
+    # Use proportional assignment for small gaps or unsynced references.
+    for gap in gap_sequences:
+        if source not in gap.reference_word_ids:
+            continue
+        ref_ids = gap.reference_word_ids[source]
+        if not ref_ids:
+            continue
+        gap_ref_segs = sorted({ref_word_to_seg[rid] for rid in ref_ids if rid in ref_word_to_seg})
+        if not gap_ref_segs:
+            continue
+
+        use_time_based = ref_is_synced and len(gap_ref_segs) > 3
+        gap_trans_ids = gap.transcribed_word_ids
+        N = len(gap_trans_ids)
+        M = len(ref_ids)
+
+        if use_time_based:
+            lo_seg = gap_ref_segs[0]
+            hi_seg = gap_ref_segs[-1]
+            for trans_id in gap_trans_ids:
+                idx = trans_id_to_idx.get(trans_id)
+                if idx is None:
+                    continue
+                t = all_words[idx].start_time
+                assigned = None
+                for seg_i in range(lo_seg, hi_seg + 1):
+                    lo, hi = boundaries[seg_i]
+                    if lo <= t < hi:
+                        assigned = seg_i
+                        break
+                if assigned is None:
+                    # Clamp to nearest boundary in the gap range
+                    assigned = min(
+                        range(lo_seg, hi_seg + 1),
+                        key=lambda i: min(abs(t - boundaries[i][0]), abs(t - boundaries[i][1])),
+                    )
+                assignments[idx] = assigned
+        else:
+            for i, trans_id in enumerate(gap_trans_ids):
+                idx = trans_id_to_idx.get(trans_id)
+                if idx is None:
+                    continue
+                ref_pos = round(i / (N - 1) * (M - 1)) if N > 1 else 0
+                ref_id = ref_ids[min(ref_pos, M - 1)]
+                seg_idx = ref_word_to_seg.get(ref_id)
+                if seg_idx is not None:
+                    assignments[idx] = seg_idx
+
+    # For synced references, time-assign any word still unassigned (e.g. words from
+    # dropped non-monotonic anchors, or words in regions with no gap coverage).
+    # This avoids aggressive forward-fill merging large blocks into one line.
+    if ref_is_synced:
+        for i, word in enumerate(all_words):
+            if assignments[i] is not None:
+                continue
+            t = word.start_time
+            for j, (lo, hi) in enumerate(boundaries):
+                if lo <= t < hi:
+                    assignments[i] = j
+                    break
+
+    # Forward-backward fill for any remaining unassigned words (outside all time windows)
+    _forward_backward_fill(assignments)
+
+    groups: Dict[int, List[Word]] = {}
+    for word, seg_idx in zip(all_words, assignments):
+        groups.setdefault(seg_idx or 0, []).append(word)
+
+    if len(groups) <= 1:
+        return None
+
+    result = []
+    for seg_idx in sorted(groups.keys()):
+        words = groups[seg_idx]
+        result.append(
+            LyricsSegment(
+                id=WordUtils.generate_id(),
+                text=" ".join(w.text for w in words),
+                words=words,
+                start_time=words[0].start_time,
+                end_time=words[-1].end_time,
+            )
+        )
+    return result
+
+
+def _resegment_by_time(
+    all_words: List[Word],
+    ref_segments: List[LyricsSegment],
+    logger: logging.Logger,
+) -> Optional[List[LyricsSegment]]:
+    """Assign words to reference segment slots based on word start_time vs reference line timestamps."""
+    # Build half-open intervals [line_start, next_line_start) for each reference segment
+    boundaries = []
+    for i, seg in enumerate(ref_segments):
+        lo = seg.start_time
+        hi = ref_segments[i + 1].start_time if i + 1 < len(ref_segments) else float("inf")
+        boundaries.append((lo, hi))
+
+    groups: Dict[int, List[Word]] = {}
+    for word in all_words:
+        t = word.start_time
+        assigned = None
+        for i, (lo, hi) in enumerate(boundaries):
+            if lo <= t < hi:
+                assigned = i
+                break
+        if assigned is None:
+            # Before first line → first segment; after last → last segment
+            assigned = 0 if t < boundaries[0][0] else len(ref_segments) - 1
+        groups.setdefault(assigned, []).append(word)
+
+    if len(groups) <= 1:
+        return None
+
+    result = []
+    for seg_idx in sorted(groups.keys()):
+        words = groups[seg_idx]
+        result.append(
+            LyricsSegment(
+                id=WordUtils.generate_id(),
+                text=" ".join(w.text for w in words),
+                words=words,
+                start_time=words[0].start_time,
+                end_time=words[-1].end_time,
+            )
+        )
+    return result
+
+
+def _resegment_by_anchors(
+    all_words: List[Word],
+    ref_segments: List[LyricsSegment],
+    anchor_sequences: List[Any],
+    source: str,
+    logger: logging.Logger,
+) -> Optional[List[LyricsSegment]]:
+    """Assign words to reference segment slots using anchor word-ID mapping, interpolating gaps."""
+    # Map reference word ID → segment index
+    ref_word_to_seg: Dict[str, int] = {}
+    for seg_idx, seg in enumerate(ref_segments):
+        for word in seg.words:
+            ref_word_to_seg[word.id] = seg_idx
+
+    # Map transcribed word ID → reference word ID via anchors
+    # Each item may be AnchorSequence or ScoredAnchor (has .anchor attribute)
+    trans_to_ref: Dict[str, str] = {}
+    for item in anchor_sequences:
+        anchor = item.anchor if hasattr(item, "anchor") else item
+        if source not in anchor.reference_word_ids:
+            continue
+        for trans_id, ref_id in zip(anchor.transcribed_word_ids, anchor.reference_word_ids[source]):
+            trans_to_ref[trans_id] = ref_id
+
+    # Assign known anchor words; leave gap words as None
+    assignments: List[Optional[int]] = [None] * len(all_words)
+    for i, word in enumerate(all_words):
+        ref_id = trans_to_ref.get(word.id)
+        if ref_id and ref_id in ref_word_to_seg:
+            assignments[i] = ref_word_to_seg[ref_id]
+
+    if not any(a is not None for a in assignments):
+        return None
+
+    # Forward fill then backward fill to cover gap words
+    _forward_backward_fill(assignments)
+
+    # Group words by assigned reference segment
+    groups: Dict[int, List[Word]] = {}
+    for word, seg_idx in zip(all_words, assignments):
+        groups.setdefault(seg_idx or 0, []).append(word)
+
+    if len(groups) <= 1:
+        return None
+
+    result = []
+    for seg_idx in sorted(groups.keys()):
+        words = groups[seg_idx]
+        result.append(
+            LyricsSegment(
+                id=WordUtils.generate_id(),
+                text=" ".join(w.text for w in words),
+                words=words,
+                start_time=words[0].start_time,
+                end_time=words[-1].end_time,
+            )
+        )
+    return result
+
+
+def _forward_backward_fill(assignments: List[Optional[int]]) -> None:
+    """Fill None entries by propagating nearest known values (forward then backward)."""
+    last: Optional[int] = None
+    for i in range(len(assignments)):
+        if assignments[i] is not None:
+            last = assignments[i]
+        elif last is not None:
+            assignments[i] = last
+    last = None
+    for i in range(len(assignments) - 1, -1, -1):
+        if assignments[i] is not None:
+            last = assignments[i]
+        elif last is not None:
+            assignments[i] = last
 
 
 class SegmentResizer:

@@ -10,7 +10,7 @@ from karaoke_gen.lyrics_transcriber.output.plain_text import PlainTextGenerator
 from karaoke_gen.lyrics_transcriber.output.lyrics_file import LyricsFileGenerator
 from karaoke_gen.lyrics_transcriber.output.subtitles import SubtitlesGenerator
 from karaoke_gen.lyrics_transcriber.output.video import VideoGenerator
-from karaoke_gen.lyrics_transcriber.output.segment_resizer import SegmentResizer
+from karaoke_gen.lyrics_transcriber.output.segment_resizer import SegmentResizer, resegment_by_reference
 from karaoke_gen.lyrics_transcriber.output.cdg import CDGGenerator
 from karaoke_gen.lyrics_transcriber.core.config import OutputConfig
 
@@ -174,8 +174,15 @@ class OutputGenerator:
             # Only process transcription-related outputs if we have transcription data
             if transcription_corrected:
 
-                # Resize corrected segments
-                resized_segments = self.segment_resizer.resize_segments(transcription_corrected.corrected_segments)
+                # Re-segment corrected lyrics to match reference line structure, then enforce max_line_length
+                reference_segmented = resegment_by_reference(
+                    transcription_corrected.corrected_segments,
+                    transcription_corrected.reference_lyrics,
+                    transcription_corrected.anchor_sequences,
+                    gap_sequences=transcription_corrected.gap_sequences,
+                    logger=self.logger,
+                )
+                resized_segments = self.segment_resizer.resize_segments(reference_segmented)
                 transcription_corrected.resized_segments = resized_segments
 
                 # For preview, we only need to generate ASS and video
