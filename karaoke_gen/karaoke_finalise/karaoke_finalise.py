@@ -955,7 +955,7 @@ class KaraokeFinalise:
 
         if "end_mov" in input_files and os.path.isfile(input_files["end_mov"]):
             self.logger.info(f"Found end_mov file: {input_files['end_mov']}, including in final MP4")
-            end_mov_file = shlex.quote(os.path.abspath(input_files["end_mov"]))
+            end_mov_file = f'"{os.path.abspath(input_files["end_mov"])}"'
             env_mov_input = f"-i {end_mov_file}"
             ffmpeg_filter = '-filter_complex "[0:v:0][0:a:0][1:v:0][1:a:0][2:v:0][2:a:0]concat=n=3:v=1:a=1[outv][outa]"'
 
@@ -996,9 +996,9 @@ class KaraokeFinalise:
         else:
             self.logger.info(f"[Step 2/{total_steps}] Skipped - video already in MP4 format")
 
-        # Quote file paths to handle special characters
-        title_mov_file = shlex.quote(os.path.abspath(input_files["title_mov"]))
-        karaoke_mp4_file = shlex.quote(os.path.abspath(output_files["karaoke_mp4"]))
+        # Quote file paths to handle special characters (double-quotes work on both Windows and Linux)
+        title_mov_file = f'"{os.path.abspath(input_files["title_mov"])}"'
+        karaoke_mp4_file = f'"{os.path.abspath(output_files["karaoke_mp4"])}"'
 
         # Prepare concat filter for combining videos
         env_mov_input, ffmpeg_filter = self.prepare_concat_filter(input_files)
