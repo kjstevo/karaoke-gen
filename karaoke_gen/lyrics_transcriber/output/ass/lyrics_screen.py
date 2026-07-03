@@ -38,9 +38,16 @@ class PositionCalculator:
 
     @staticmethod
     def position_to_line_index(y_position: int, config: ScreenConfig) -> int:
-        """Convert y-position to 0-based line index."""
+        """Convert y-position to 0-based line index.
+
+        Uses round() rather than floor division: y_position is always expected to
+        land exactly on one of calculate_line_positions()'s values, but non-integer
+        top_padding (e.g. preview mode's 1/6-scaled padding) can make that value land
+        a hair below the true multiple of line_height (e.g. 99.99999999999997 instead
+        of 100.0), which floor division truncates down to the wrong index.
+        """
         first_pos = PositionCalculator.calculate_first_line_position(config)
-        return (y_position - first_pos) // config.line_height
+        return round((y_position - first_pos) / config.line_height)
 
     @staticmethod
     def line_index_to_position(index: int, config: ScreenConfig) -> int:
