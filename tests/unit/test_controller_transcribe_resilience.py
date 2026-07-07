@@ -77,3 +77,37 @@ def test_transcribe_warns_when_all_providers_fail(tmp_path, output_config):
     controller.transcribe()
 
     assert controller.results.transcription_results == []
+
+
+def test_transcribe_falls_back_to_whisper_when_replicate_fails(tmp_path, output_config):
+    """A registered fallback transcriber runs and its result is recorded when the primary fails."""
+    failing = {"instance": MagicMock(), "priority": 2}
+    failing["instance"].transcribe.side_effect = RuntimeError("boom")
+
+    whisper_fallback = {"instance": MagicMock(), "priority": 2}
+    whisper_fallback["instance"].transcribe.return_value = make_transcription_data("whisper")
+
+    controller = make_controller(tmp_path, output_config, {"replicate_force_align": failing})
+    controller._transcriber_fallbacks["replicate_force_align"] = {"name": "whisper", "info": whisper_fallback}
+
+    controller.transcribe()
+
+    assert len(controller.results.transcription_results) == 1
+    assert controller.results.transcription_results[0].name == "whisper"
+    whisper_fallback["instance"].transcribe.assert_called_once_with(controller.audio_filepath)
+
+
+def test_transcribe_handles_fallback_also_failing(tmp_path, output_config):
+    """If the fallback transcriber also fails, transcribe() should not raise."""
+    failing = {"instance": MagicMock(), "priority": 2}
+    failing["instance"].transcribe.side_effect = RuntimeError("boom")
+
+    whisper_fallback = {"instance": MagicMock(), "priority": 2}
+    whisper_fallback["instance"].transcribe.side_effect = RuntimeError("fallback also failed")
+
+    controller = make_controller(tmp_path, output_config, {"replicate_force_align": failing})
+    controller._transcriber_fallbacks["replicate_force_align"] = {"name": "whisper", "info": whisper_fallback}
+
+    controller.transcribe()
+
+    assert controller.results.transcription_results == []

@@ -131,6 +131,19 @@ def test_audioshake_untouched_when_replicate_injected(controller):
     assert controller.transcribers["audioshake"] is mock_audioshake
 
 
+def test_removed_whisper_registered_as_fallback(controller):
+    """The whisper transcriber removed during injection is kept as a fallback for replicate_force_align."""
+    original_whisper = controller.transcribers["whisper"]
+    controller.results.lyrics_results = {
+        "lrclib": make_lyrics_data("Hello world\nGoodbye world"),
+    }
+    controller._inject_replicate_if_applicable()
+
+    fallback = controller._transcriber_fallbacks["replicate_force_align"]
+    assert fallback["name"] == "whisper"
+    assert fallback["info"] is original_whisper
+
+
 def test_replicate_not_injected_when_lyrics_text_empty(controller):
     """Replicate transcriber is NOT injected when all lyrics sources have empty text."""
     from karaoke_gen.lyrics_transcriber.utils.word_utils import WordUtils

@@ -2,7 +2,7 @@ import os
 import logging
 import json
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List
+from typing import Any, Dict, Optional, List
 from karaoke_gen.lyrics_transcriber.types import LyricsData, TranscriptionResult, CorrectionResult
 from karaoke_gen.lyrics_transcriber.transcribers.base_transcriber import BaseTranscriber
 from karaoke_gen.lyrics_transcriber.transcribers.audioshake import AudioShakeTranscriber, AudioShakeConfig
@@ -128,6 +128,10 @@ class LyricsTranscriber:
 
         # Initialize components (with dependency injection)
         self.transcribers = transcribers or self._initialize_transcribers()
+        # Maps a transcriber name to the transcriber it replaced, so transcribe()
+        # can fall back to it if the replacement fails (e.g. Replicate force-align
+        # falling back to RunPod Whisper).
+        self._transcriber_fallbacks: Dict[str, Dict[str, Any]] = {}
         self.lyrics_providers = lyrics_providers or self._initialize_lyrics_providers()
         self.corrector = corrector or LyricsCorrector(cache_dir=self.output_config.cache_dir, logger=self.logger)
         self.output_generator = output_generator or self._initialize_output_generator()
@@ -311,6 +315,8 @@ class LyricsTranscriber:
             return
 
         removed = self.transcribers.pop("whisper", None)
+        if removed:
+            self._transcriber_fallbacks["replicate_force_align"] = {"name": "whisper", "info": removed}
         self.transcribers["replicate_force_align"] = {
             "instance": ReplicateForceAlignTranscriber(
                 cache_dir=self.output_config.cache_dir,
@@ -515,23 +521,42 @@ class LyricsTranscriber:
 
         for name, transcriber_info in self.transcribers.items():
             self.logger.info(f"Running transcription with {name}")
-            try:
-                result = transcriber_info["instance"].transcribe(self.audio_filepath)
-            except Exception as e:
-                self.logger.error(f"Failed to transcribe with {name}: {str(e)}")
-                continue
+            result, used_name, used_info = self._transcribe_with_fallback(name, transcriber_info)
             if result:
                 # Add the transcriber name and priority to the result
                 self.results.transcription_results.append(
-                    TranscriptionResult(name=name, priority=transcriber_info["priority"], result=result)
+                    TranscriptionResult(name=used_name, priority=used_info["priority"], result=result)
                 )
-                self.logger.debug(f"Transcription completed for {name}")
+                self.logger.debug(f"Transcription completed for {used_name}")
 
         if not self.results.transcription_results:
             self.logger.warning(
                 "No successful transcriptions from any provider. "
                 "Check that your API tokens are valid and the services are accessible."
             )
+
+    def _transcribe_with_fallback(self, name: str, transcriber_info: Dict[str, Any]):
+        """Run a transcriber, falling back to a registered replacement transcriber on failure.
+
+        Returns (result, name, transcriber_info) for whichever transcriber actually
+        produced a result, or (None, name, transcriber_info) if both failed.
+        """
+        try:
+            return transcriber_info["instance"].transcribe(self.audio_filepath), name, transcriber_info
+        except Exception as e:
+            self.logger.error(f"Failed to transcribe with {name}: {str(e)}")
+
+        fallback = self._transcriber_fallbacks.get(name)
+        if not fallback:
+            return None, name, transcriber_info
+
+        fallback_name, fallback_info = fallback["name"], fallback["info"]
+        self.logger.warning(f"Falling back to {fallback_name} transcriber after {name} failure")
+        try:
+            return fallback_info["instance"].transcribe(self.audio_filepath), fallback_name, fallback_info
+        except Exception as e:
+            self.logger.error(f"Fallback transcriber {fallback_name} also failed: {str(e)}")
+            return None, fallback_name, fallback_info
 
     def _log_provider_configuration_status(self) -> None:
         """Log detailed configuration status for each potential transcription provider."""
