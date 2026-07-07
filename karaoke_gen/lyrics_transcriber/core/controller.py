@@ -515,7 +515,11 @@ class LyricsTranscriber:
 
         for name, transcriber_info in self.transcribers.items():
             self.logger.info(f"Running transcription with {name}")
-            result = transcriber_info["instance"].transcribe(self.audio_filepath)
+            try:
+                result = transcriber_info["instance"].transcribe(self.audio_filepath)
+            except Exception as e:
+                self.logger.error(f"Failed to transcribe with {name}: {str(e)}")
+                continue
             if result:
                 # Add the transcriber name and priority to the result
                 self.results.transcription_results.append(
