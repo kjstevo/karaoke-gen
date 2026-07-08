@@ -91,8 +91,8 @@
   "cdg": {
     "font_path": "/Users/UP KJ/source/repos/kjstevo/karaoke-gen/.worktrees/reference-resegmentation/NotoSans-Bold.ttf",
     "instrumental_background": "/usr/local/lib/python3.12/dist-packages/karaoke_gen/lyrics_transcriber/output/cdgmaker/images/instrumental.png",
-    "title_screen_background": "/Users/UP KJ/source/repos/kjstevo/karaoke-gen/.worktrees/reference-resegmentation/KJMXIcon.ico",
-    "outro_background": "./KJMXIcon.ico",
+    "title_screen_background": "/Users/UP KJ/source/repos/kjstevo/karaoke-gen/.worktrees/reference-resegmentation/kjmaster.jpg",
+    "outro_background": "./kjmaster.jpg",
     "clear_mode": "eager",
     "sync_offset": 0,
     "lead_in_threshold": 300,
