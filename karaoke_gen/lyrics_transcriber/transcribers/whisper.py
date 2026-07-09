@@ -266,6 +266,22 @@ class WhisperTranscriber(BaseTranscriber):
 
         full_text = " ".join(seg["text"].strip() for seg in raw_data["segments"])
 
+        # Segments can have real transcribed text but zero usable words if every word's
+        # start/end came back null (filtered out above to prevent a crash elsewhere, see
+        # commit 81b9dcdb) - this happens when WhisperX's alignment pass fails on the
+        # RunPod worker without the job itself failing. Left unchecked, this silently
+        # produces a "successful" transcription with no word-level timing at all, which
+        # cascades into zero anchors during correction and a correction UI that looks
+        # empty with no indication why.
+        if raw_data["segments"] and not all_words:
+            raise TranscriptionError(
+                "WhisperX returned segment text but no word-level alignment timing for "
+                "any word (every word's start/end was null). The RunPod endpoint's "
+                "alignment step likely failed for this audio even though the job "
+                "itself completed. Try again, or check the Whisper RunPod endpoint's "
+                "alignment configuration."
+            )
+
         return TranscriptionData(
             segments=segments,
             words=all_words,
