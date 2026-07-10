@@ -47,6 +47,11 @@ class RunPodWhisperAPI:
                 "align_output": True,
                 "batch_size": 32,
                 "debug": True,
+                # Force English rather than relying on Whisper's language auto-detection,
+                # which has been observed to misdetect language on this audio (e.g. "sn"
+                # instead of "en") - the alignment step then loads the wrong phoneme model
+                # and fails to align any word, even though the ASR text itself is fine.
+                "language": "en",
             }
         }
 

@@ -171,6 +171,7 @@ def test_perform_transcription_calls_replicate_run(transcriber, tmp_path):
     assert call_args[0][0] == "cureau/force-align-wordstamps:44dedb84066ba1e00761f45c1003c5c19ed3b12ae9d42c1c1883ca4c016ffa85"
     assert call_args[1]["input"]["transcript"] == "Hello world\nGoodbye world"
     assert hasattr(call_args[1]["input"]["audio_file"], "read")
+    assert "show_probabilities" not in call_args[1]["input"]
     assert call_args[1]["wait"] is False
     assert result == {"words": word_stamps}
 

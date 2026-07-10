@@ -552,6 +552,9 @@ class LyricsTranscriber:
 
         fallback_name, fallback_info = fallback["name"], fallback["info"]
         self.logger.warning(f"Falling back to {fallback_name} transcriber after {name} failure")
+        # Clear any pre-existing cache for the fallback transcriber so it can't silently
+        # reuse a stale result from an earlier, unrelated failed run (see commit 6b4ba524).
+        fallback_info["instance"].clear_cache(self.audio_filepath)
         try:
             return fallback_info["instance"].transcribe(self.audio_filepath), fallback_name, fallback_info
         except Exception as e:

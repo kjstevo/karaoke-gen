@@ -67,12 +67,16 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
                 # wait=False avoids the 60-second per-request read timeout that
                 # client.run() adds when wait=True (Prefer: wait header). The
                 # model takes several minutes so we need to poll instead.
+                # show_probabilities is omitted: requesting it triggers the model's
+                # probability-refinement pass, which crashes (torch.stft on a
+                # zero-length tensor) whenever any word fails initial alignment.
+                # We don't use the probability/confidence field downstream, and the
+                # primary word-timing output completes without it.
                 output = client.run(
                     MODEL_VERSION,
                     input={
                         "audio_file": audio_file,
                         "transcript": self.config.reference_text,
-                        "show_probabilities": True,
                     },
                     wait=False,
                 )

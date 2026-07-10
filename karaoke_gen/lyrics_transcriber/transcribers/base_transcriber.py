@@ -78,6 +78,20 @@ class BaseTranscriber(ABC):
         self._save_to_cache(converted_cache_path, converted_result.to_dict())
         return converted_result
 
+    def clear_cache(self, audio_filepath: str) -> None:
+        """Delete this transcriber's raw and converted cache files for the given audio file.
+
+        Used before running a fallback transcriber so it can't silently reuse a stale
+        cached result (e.g. from a previous run where this same transcriber failed in
+        a way that produced bad-but-cacheable data).
+        """
+        file_hash = self._get_file_hash(audio_filepath)
+        for suffix in ("raw", "converted"):
+            cache_path = self._get_cache_path(file_hash, suffix)
+            if os.path.exists(cache_path):
+                os.remove(cache_path)
+                self.logger.info(f"Cleared stale cache: {cache_path}")
+
     def transcribe(self, audio_filepath: str) -> TranscriptionData:
         """
         Transcribe an audio file, using cache if available.
