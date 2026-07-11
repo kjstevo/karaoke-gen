@@ -1,7 +1,9 @@
 """Tests for ReplicateForceAlignTranscriber."""
+import importlib
 import pytest
 from unittest.mock import MagicMock, patch
 
+from karaoke_gen.lyrics_transcriber.transcribers import replicate_force_align
 from karaoke_gen.lyrics_transcriber.transcribers.replicate_force_align import (
     ReplicateForceAlignConfig,
     ReplicateForceAlignTranscriber,
@@ -174,6 +176,30 @@ def test_perform_transcription_calls_replicate_run(transcriber, tmp_path):
     assert "show_probabilities" not in call_args[1]["input"]
     assert call_args[1]["wait"] is False
     assert result == {"words": word_stamps}
+
+
+def test_input_field_names_default(monkeypatch):
+    """Without env vars, audio/transcript input field names use the documented defaults."""
+    monkeypatch.delenv("REPLICATE_FORCE_ALIGN_AUDIO_FIELD", raising=False)
+    monkeypatch.delenv("REPLICATE_FORCE_ALIGN_TRANSCRIPT_FIELD", raising=False)
+    module = importlib.reload(replicate_force_align)
+    try:
+        assert module.AUDIO_INPUT_FIELD == "audio_file"
+        assert module.TRANSCRIPT_INPUT_FIELD == "transcript"
+    finally:
+        importlib.reload(replicate_force_align)
+
+
+def test_input_field_names_overridden_by_env_vars(monkeypatch):
+    """REPLICATE_FORCE_ALIGN_AUDIO_FIELD / _TRANSCRIPT_FIELD override the default input keys."""
+    monkeypatch.setenv("REPLICATE_FORCE_ALIGN_AUDIO_FIELD", "input_audio")
+    monkeypatch.setenv("REPLICATE_FORCE_ALIGN_TRANSCRIPT_FIELD", "lyrics_text")
+    module = importlib.reload(replicate_force_align)
+    try:
+        assert module.AUDIO_INPUT_FIELD == "input_audio"
+        assert module.TRANSCRIPT_INPUT_FIELD == "lyrics_text"
+    finally:
+        importlib.reload(replicate_force_align)
 
 
 def test_perform_transcription_raises_on_empty_output(transcriber, tmp_path):

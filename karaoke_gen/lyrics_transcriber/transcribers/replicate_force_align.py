@@ -13,8 +13,12 @@ from karaoke_gen.lyrics_transcriber.utils.word_utils import WordUtils
 import replicate
 
 DEFAULT_MODEL_VERSION = "cureau/force-align-wordstamps:44dedb84066ba1e00761f45c1003c5c19ed3b12ae9d42c1c1883ca4c016ffa85"
+DEFAULT_AUDIO_INPUT_FIELD = "audio_file"
+DEFAULT_TRANSCRIPT_INPUT_FIELD = "transcript"
 # An empty-string env var (set but blank) falls back to the default too, not just an absent one.
 MODEL_VERSION = os.environ.get("REPLICATE_FORCE_ALIGN_MODEL_VERSION") or DEFAULT_MODEL_VERSION
+AUDIO_INPUT_FIELD = os.environ.get("REPLICATE_FORCE_ALIGN_AUDIO_FIELD") or DEFAULT_AUDIO_INPUT_FIELD
+TRANSCRIPT_INPUT_FIELD = os.environ.get("REPLICATE_FORCE_ALIGN_TRANSCRIPT_FIELD") or DEFAULT_TRANSCRIPT_INPUT_FIELD
 
 
 @dataclass
@@ -77,8 +81,8 @@ class ReplicateForceAlignTranscriber(BaseTranscriber):
                 output = client.run(
                     MODEL_VERSION,
                     input={
-                        "audio_file": audio_file,
-                        "transcript": self.config.reference_text,
+                        AUDIO_INPUT_FIELD: audio_file,
+                        TRANSCRIPT_INPUT_FIELD: self.config.reference_text,
                     },
                     wait=False,
                 )
