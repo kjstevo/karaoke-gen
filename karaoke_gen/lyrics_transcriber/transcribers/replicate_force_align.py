@@ -12,7 +12,9 @@ from karaoke_gen.lyrics_transcriber.types import TranscriptionData, LyricsSegmen
 from karaoke_gen.lyrics_transcriber.utils.word_utils import WordUtils
 import replicate
 
-MODEL_VERSION = "cureau/force-align-wordstamps:44dedb84066ba1e00761f45c1003c5c19ed3b12ae9d42c1c1883ca4c016ffa85"
+DEFAULT_MODEL_VERSION = "cureau/force-align-wordstamps:44dedb84066ba1e00761f45c1003c5c19ed3b12ae9d42c1c1883ca4c016ffa85"
+# An empty-string env var (set but blank) falls back to the default too, not just an absent one.
+MODEL_VERSION = os.environ.get("REPLICATE_FORCE_ALIGN_MODEL_VERSION") or DEFAULT_MODEL_VERSION
 
 
 @dataclass
