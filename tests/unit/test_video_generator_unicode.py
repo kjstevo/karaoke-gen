@@ -240,6 +240,70 @@ class TestVideoGeneratorUnicodeSanitization:
             if os.path.exists(audio_path):
                 os.unlink(audio_path)
 
+    def test_fontsdir_relative_to_cwd_avoids_space_in_path(self):
+        """Regression test: an absolute font_path under a directory containing a
+        space (e.g. a Windows user profile like 'C:\\Users\\John Doe\\...') must not
+        leak into the -vf filtergraph string as an absolute fontsdir. FFmpeg's
+        filtergraph parser can misparse such paths even when single-quoted,
+        producing 'Could not create a libass track when reading file <fontsdir>'
+        because fontsdir gets mistaken for the ass filename. fontsdir must be made
+        relative to ffmpeg's cwd, the same way the temp ASS path already is (see
+        the 'Pass only the basename' comment in generate_video).
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            space_dir = os.path.join(tmpdir, "dir with space")
+            output_dir = os.path.join(space_dir, "output")
+            cache_dir = os.path.join(space_dir, "cache")
+            fonts_dir = os.path.join(space_dir, "Resources")
+            os.makedirs(output_dir)
+            os.makedirs(cache_dir)
+            os.makedirs(fonts_dir)
+
+            font_path = os.path.join(fonts_dir, "custom.ttf")
+            with open(font_path, "w") as f:
+                f.write("fake font")
+
+            styles = {
+                "karaoke": {
+                    "background_color": "black",
+                    "font_path": font_path,
+                }
+            }
+
+            generator = VideoGenerator(
+                output_dir=output_dir,
+                cache_dir=cache_dir,
+                video_resolution=(1920, 1080),
+                styles=styles,
+                logger=MagicMock(),
+            )
+
+            with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as ass_file:
+                ass_path = ass_file.name
+                ass_file.write(b"[Script Info]\nTitle: Test\n")
+
+            with tempfile.NamedTemporaryFile(suffix=".flac", delete=False) as audio_file:
+                audio_path = audio_file.name
+
+            try:
+                with patch.object(generator, '_run_ffmpeg_command') as mock_ffmpeg:
+                    generator.generate_video(ass_path, audio_path, "Test Song")
+
+                    cmd = mock_ffmpeg.call_args[0][0]
+                    vf_value = cmd[cmd.index("-vf") + 1]
+
+                    assert "fontsdir=" in vf_value
+                    # The space-containing absolute directory must not appear in the
+                    # -vf value (in either separator form — _escape_ffmpeg_filter_path
+                    # converts backslashes to forward slashes).
+                    assert space_dir not in vf_value
+                    assert space_dir.replace("\\", "/") not in vf_value
+            finally:
+                if os.path.exists(ass_path):
+                    os.unlink(ass_path)
+                if os.path.exists(audio_path):
+                    os.unlink(audio_path)
+
     def test_special_characters_replaced_with_underscores(self, video_generator):
         """Test that special characters (spaces, hyphens, etc.) are replaced."""
         output_prefix = "artist - title (version) [2024]"

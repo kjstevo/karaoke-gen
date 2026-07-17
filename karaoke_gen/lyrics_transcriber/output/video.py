@@ -237,7 +237,10 @@ class VideoGenerator:
             abs_output_path = os.path.abspath(output_path)
             # Pass only the basename so FFmpeg's filter string never contains a
             # Windows drive letter colon ("C:") — FFmpeg resolves it via cwd.
-            cmd = self._build_ffmpeg_command(os.path.basename(temp_ass_path), abs_audio_path, abs_output_path)
+            # fontsdir gets the same cwd-relative treatment (see _build_ass_filter)
+            # since a font_path under a space-containing directory (e.g. a Windows
+            # user profile) hits the exact same FFmpeg filtergraph parsing failure.
+            cmd = self._build_ffmpeg_command(os.path.basename(temp_ass_path), abs_audio_path, abs_output_path, cwd=abs_cache_dir)
             self._run_ffmpeg_command(cmd, cwd=abs_cache_dir)
             self.logger.info(f"Video generated: {output_path}")
 
@@ -410,8 +413,17 @@ class VideoGenerator:
         path = path.replace("'", "'\\''")
         return f"'{path}'"
 
-    def _build_ass_filter(self, ass_path: str) -> str:
-        """Build ASS filter with font directory support."""
+    def _build_ass_filter(self, ass_path: str, cwd: Optional[str] = None) -> str:
+        """Build ASS filter with font directory support.
+
+        Args:
+            ass_path: Path to ASS subtitles file
+            cwd: FFmpeg's working directory, if known. fontsdir is made relative to
+                 this so that a fontsdir under a directory containing a space (e.g. a
+                 Windows user profile like "C:\\Users\\John Doe\\...") never appears
+                 as an absolute path in the filtergraph string — FFmpeg can misparse
+                 such paths even when single-quoted, corrupting the whole -vf value.
+        """
         escaped_ass_path = self._escape_ffmpeg_filter_path(ass_path)
         ass_filter = f"ass=f={escaped_ass_path}"
 
@@ -421,13 +433,20 @@ class VideoGenerator:
 
         if font_path and os.path.isfile(font_path):
             font_dir = os.path.dirname(font_path)
+            if cwd:
+                try:
+                    font_dir = os.path.relpath(font_dir, cwd)
+                except ValueError:
+                    # Different drive on Windows — relpath is impossible, fall back
+                    # to the absolute path (matches the previous, working-if-no-space behavior).
+                    pass
             escaped_font_dir = self._escape_ffmpeg_filter_path(font_dir)
             ass_filter += f":fontsdir={escaped_font_dir}"
             self.logger.info(f"Returning ASS filter with fonts dir: {ass_filter}")
 
         return ass_filter
 
-    def _build_ffmpeg_command(self, ass_path: str, audio_path: str, output_path: str) -> List[str]:
+    def _build_ffmpeg_command(self, ass_path: str, audio_path: str, output_path: str, cwd: Optional[str] = None) -> List[str]:
         """Build FFmpeg command for video generation with hardware acceleration when available."""
         width, height = self.video_resolution
 
@@ -463,7 +482,7 @@ class VideoGenerator:
         cmd.extend([
             "-i", audio_path,
             "-c:a", "flac",  # Re-encode audio as FLAC
-            "-vf", self._build_ass_filter(ass_path),  # Add subtitles with font directories
+            "-vf", self._build_ass_filter(ass_path, cwd),  # Add subtitles with font directories
             "-c:v", self.video_encoder,
         ])
 
