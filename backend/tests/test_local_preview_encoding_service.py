@@ -373,6 +373,62 @@ class TestLocalPreviewEncodingServiceEncode:
             assert tmpdir not in cmd_str.split("-vf")[1]  # path not in the filter arg
 
     @patch("subprocess.run")
+    def test_encode_preview_fontsdir_relative_to_cwd(self, mock_run):
+        """Regression test: an absolute font path under a directory containing a
+        space (e.g. a Windows user profile like 'C:\\Users\\John Doe\\...') must not
+        leak into the -vf filtergraph string as an absolute fontsdir. FFmpeg's
+        filtergraph parser can misparse such paths even when single-quoted, which
+        previously produced 'Could not create a libass track when reading file
+        <fontsdir>' because fontsdir got mistaken for the ass filename. fontsdir
+        must be made relative to ffmpeg's cwd, the same way ass_path already is.
+        """
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            space_dir = os.path.join(tmpdir, "dir with space")
+            job_dir = os.path.join(space_dir, "job")
+            fonts_dir = os.path.join(space_dir, "Resources")
+            os.makedirs(job_dir)
+            os.makedirs(fonts_dir)
+
+            ass_path = os.path.join(job_dir, "subs.ass")
+            audio_path = os.path.join(job_dir, "audio.flac")
+            output_path = os.path.join(job_dir, "output.mp4")
+            font_path = os.path.join(fonts_dir, "custom.ttf")
+
+            with open(ass_path, "w") as f:
+                f.write("[Script Info]\n")
+            with open(audio_path, "wb") as f:
+                f.write(b"fake audio")
+            with open(font_path, "w") as f:
+                f.write("fake font")
+
+            service = LocalPreviewEncodingService()
+            service._nvenc_available = False
+            service._video_encoder = "libx264"
+            service._hwaccel_flags = []
+
+            config = PreviewEncodingConfig(
+                ass_path=ass_path,
+                audio_path=audio_path,
+                output_path=output_path,
+                font_path=font_path,
+            )
+
+            result = service.encode_preview(config)
+
+            assert result.success is True
+            cmd = mock_run.call_args[0][0]
+            vf_value = cmd[cmd.index("-vf") + 1]
+            assert "fontsdir=" in vf_value
+            # The space-containing absolute directory must not appear in the -vf
+            # value (in either separator form — _escape_ffmpeg_filter_path converts
+            # backslashes to forward slashes) — only a cwd-relative fontsdir does,
+            # keeping the space out of the ffmpeg filtergraph argument entirely.
+            assert space_dir not in vf_value
+            assert space_dir.replace("\\", "/") not in vf_value
+
+    @patch("subprocess.run")
     def test_encode_preview_ffmpeg_failure(self, mock_run):
         """Test preview encoding with FFmpeg failure."""
         mock_run.return_value = MagicMock(returncode=1, stderr="FFmpeg error message")

@@ -193,13 +193,18 @@ class LocalPreviewEncodingService:
         # Wrap in single quotes to protect colons, spaces, and all other special chars
         return f"'{path}'"
 
-    def _build_ass_filter(self, ass_path: str, font_path: Optional[str] = None) -> str:
+    def _build_ass_filter(self, ass_path: str, font_path: Optional[str] = None, cwd: Optional[str] = None) -> str:
         """
         Build ASS filter with optional font directory support.
 
         Args:
             ass_path: Path to ASS subtitles file
             font_path: Optional path to custom font file
+            cwd: FFmpeg's working directory, if known. fontsdir is made relative to
+                 this so that a fontsdir under a directory containing a space (e.g. a
+                 Windows user profile like "C:\\Users\\John Doe\\...") never appears
+                 as an absolute path in the filtergraph string — FFmpeg can misparse
+                 such paths even when single-quoted, corrupting the whole -vf value.
 
         Returns:
             FFmpeg ASS filter string
@@ -209,13 +214,20 @@ class LocalPreviewEncodingService:
 
         if font_path and os.path.isfile(font_path):
             font_dir = os.path.dirname(font_path)
+            if cwd:
+                try:
+                    font_dir = os.path.relpath(font_dir, cwd)
+                except ValueError:
+                    # Different drive on Windows — relpath is impossible, fall back
+                    # to the absolute path (matches the previous, working-if-no-space behavior).
+                    pass
             escaped_font_dir = self._escape_ffmpeg_filter_path(font_dir)
             ass_filter += f":fontsdir={escaped_font_dir}"
             self.logger.debug(f"Using font directory: {font_dir}")
 
         return ass_filter
 
-    def _build_preview_ffmpeg_command(self, config: PreviewEncodingConfig) -> List[str]:
+    def _build_preview_ffmpeg_command(self, config: PreviewEncodingConfig, cwd: Optional[str] = None) -> List[str]:
         """
         Build FFmpeg command for preview video generation.
 
@@ -224,6 +236,8 @@ class LocalPreviewEncodingService:
 
         Args:
             config: Preview encoding configuration
+            cwd: FFmpeg's working directory, if known. Passed through to
+                 _build_ass_filter to keep fontsdir relative-safe.
 
         Returns:
             FFmpeg command as a list of arguments
@@ -251,7 +265,7 @@ class LocalPreviewEncodingService:
             video_filter = (
                 f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
-                f"{self._build_ass_filter(config.ass_path, config.font_path)}"
+                f"{self._build_ass_filter(config.ass_path, config.font_path, cwd)}"
             )
         else:
             self.logger.debug(f"Using solid {config.background_color} background")
@@ -260,7 +274,7 @@ class LocalPreviewEncodingService:
                 "-i", f"color=c={config.background_color}:s={width}x{height}:r={self.PREVIEW_FPS}",
             ])
             # Just ASS subtitles, no scaling needed
-            video_filter = self._build_ass_filter(config.ass_path, config.font_path)
+            video_filter = self._build_ass_filter(config.ass_path, config.font_path, cwd)
 
         cmd.extend([
             "-i", config.audio_path,
@@ -344,6 +358,9 @@ class LocalPreviewEncodingService:
             # FFmpeg filter strings can't reliably handle paths with spaces, even with quoting.
             # Sidestep this entirely: run FFmpeg with cwd=ass_dir and pass just the basename.
             # The basename is guaranteed space-free by the safe_prefix sanitization in the caller.
+            # fontsdir gets the same treatment (made relative to ass_dir in _build_ass_filter)
+            # since a font_path under a space-containing directory (e.g. a Windows user
+            # profile) hits the exact same FFmpeg filtergraph parsing failure.
             ass_abs = os.path.abspath(config.ass_path)
             ass_dir = os.path.dirname(ass_abs)
             cmd_config = dataclasses.replace(
@@ -354,7 +371,7 @@ class LocalPreviewEncodingService:
                 background_image_path=os.path.abspath(config.background_image_path) if config.background_image_path else None,
             )
 
-            cmd = self._build_preview_ffmpeg_command(cmd_config)
+            cmd = self._build_preview_ffmpeg_command(cmd_config, cwd=ass_dir)
             self.logger.debug(f"FFmpeg command (cwd={ass_dir}): {' '.join(cmd)}")
 
             result = subprocess.run(
