@@ -17,6 +17,7 @@ OUTPUT_FILES = {
     "final_karaoke_lossless_mkv": f"{BASE_NAME} (Final Karaoke Lossless 4k).mkv",
     "final_karaoke_lossy_mp4": f"{BASE_NAME} (Final Karaoke Lossy 4k).mp4",
     "final_karaoke_lossy_720p_mp4": f"{BASE_NAME} (Final Karaoke Lossy 720p).mp4",
+    "final_karaoke_lossless_720p_mp4": f"{BASE_NAME} (Karaoke lossless 720 final).mp4",
 }
 
 INPUT_FILES = {
@@ -100,9 +101,8 @@ def test_prepare_concat_filter_no_end_mov(mock_isfile, finaliser_with_aac):
     mock_isfile.assert_not_called() # Should not check if key not present
 
 @patch('os.path.isfile', return_value=True)
-@patch('shlex.quote', side_effect=lambda x: f"'{x}'") # Simple quote mock
 @patch('os.path.abspath', side_effect=lambda x: f"/abs/path/{x}") # Simple abspath mock
-def test_prepare_concat_filter_with_end_mov(mock_abspath, mock_quote, mock_isfile, finaliser_with_aac):
+def test_prepare_concat_filter_with_end_mov(mock_abspath, mock_isfile, finaliser_with_aac):
     """Test concat filter with end_mov."""
     input_files_with_end = INPUT_FILES.copy()
     input_files_with_end["end_mov"] = END_MOV
@@ -112,11 +112,36 @@ def test_prepare_concat_filter_with_end_mov(mock_abspath, mock_quote, mock_isfil
     expected_end_mov_path = '/abs/path/' + END_MOV
     mock_isfile.assert_called_once_with(END_MOV)
     mock_abspath.assert_called_once_with(END_MOV)
-    mock_quote.assert_called_once_with(expected_end_mov_path)
 
-    assert env_mov_input == f"-i '{expected_end_mov_path}'"
+    assert env_mov_input == f'-i "{expected_end_mov_path}"'
     assert ffmpeg_filter == '-filter_complex "[0:v:0][0:a:0][1:v:0][1:a:0][2:v:0][2:a:0]concat=n=3:v=1:a=1[outv][outa]"'
     finaliser_with_aac.logger.info.assert_called_with(f"Found end_mov file: {END_MOV}, including in final MP4")
+
+@patch('os.path.isfile', return_value=False)
+def test_prepare_concat_filter_scale_to_720p_no_end_mov(mock_isfile, finaliser_with_aac):
+    """Test concat filter appends a scale stage when scale_to_720p is set."""
+    input_files_no_end = INPUT_FILES.copy()
+    env_mov_input, ffmpeg_filter = finaliser_with_aac.prepare_concat_filter(input_files_no_end, scale_to_720p=True)
+    assert env_mov_input == ""
+    assert ffmpeg_filter == (
+        '-filter_complex "[0:v:0][0:a:0][1:v:0][1:a:0]concat=n=2:v=1:a=1[concatv][outa];'
+        '[concatv]scale=1280:720[outv]"'
+    )
+
+@patch('os.path.isfile', return_value=True)
+@patch('os.path.abspath', side_effect=lambda x: f"/abs/path/{x}")
+def test_prepare_concat_filter_scale_to_720p_with_end_mov(mock_abspath, mock_isfile, finaliser_with_aac):
+    """Test concat filter with end_mov also appends the scale stage."""
+    input_files_with_end = INPUT_FILES.copy()
+    input_files_with_end["end_mov"] = END_MOV
+
+    env_mov_input, ffmpeg_filter = finaliser_with_aac.prepare_concat_filter(input_files_with_end, scale_to_720p=True)
+
+    assert env_mov_input == f'-i "/abs/path/{END_MOV}"'
+    assert ffmpeg_filter == (
+        '-filter_complex "[0:v:0][0:a:0][1:v:0][1:a:0][2:v:0][2:a:0]concat=n=3:v=1:a=1[concatv][outa];'
+        '[concatv]scale=1280:720[outv]"'
+    )
 
 
 # --- Individual Encoding Method Tests ---
@@ -127,7 +152,7 @@ def test_remux_with_instrumental(mock_execute, finaliser_with_aac):
     finaliser_with_aac.remux_with_instrumental(WITH_VOCALS_MOV, INSTRUMENTAL_FLAC, OUTPUT_FILES["karaoke_mp4"])
     expected_cmd = (
         f'{finaliser_with_aac.ffmpeg_base_command} -an -i "{WITH_VOCALS_MOV}" '
-        f'-vn -i "{INSTRUMENTAL_FLAC}" -c:v copy -c:a pcm_s16le "{OUTPUT_FILES["karaoke_mp4"]}"'
+        f'-vn -i "{INSTRUMENTAL_FLAC}" -c:v copy -c:a flac "{OUTPUT_FILES["karaoke_mp4"]}"'
     )
     mock_execute.assert_called_once_with(expected_cmd, "Remuxing video with instrumental audio")
 
@@ -180,14 +205,39 @@ def test_encode_lossless_mp4(mock_quote, mock_execute_fallback, finaliser_with_a
         f"{finaliser_with_aac.ffmpeg_base_command}  -i {quoted_title_mov} "
         f" -i {quoted_karaoke_mp4} {env_mov_input} "
         f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 '
-        f'-preset lossless -c:a pcm_s16le {finaliser_with_aac.mp4_flags} "{OUTPUT_FILES["final_karaoke_lossless_mp4"]}"'
+        f'-preset p4 -tune hq -cq 18 -c:a flac {finaliser_with_aac.mp4_flags} "{OUTPUT_FILES["final_karaoke_lossless_mp4"]}"'
     )
     expected_cpu_cmd = (
         f"{finaliser_with_aac.ffmpeg_base_command} -i {quoted_title_mov} -i {quoted_karaoke_mp4} {env_mov_input} "
-        f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 -c:a pcm_s16le '
+        f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 -c:a flac '
         f'{finaliser_with_aac.mp4_flags} "{OUTPUT_FILES["final_karaoke_lossless_mp4"]}"'
     )
-    mock_execute_fallback.assert_called_once_with(expected_gpu_cmd, expected_cpu_cmd, "Creating MP4 version with PCM audio")
+    mock_execute_fallback.assert_called_once_with(expected_gpu_cmd, expected_cpu_cmd, "Creating MP4 version with lossless audio")
+
+@patch.object(KaraokeFinalise, 'execute_command_with_fallback')
+def test_encode_lossless_720p_mp4(mock_execute_fallback, finaliser_with_aac):
+    """Test encode_lossless_720p_mp4 command (CPU encoding since NVENC disabled)."""
+    quoted_title_mov = f'"{TITLE_MOV}"'
+    quoted_karaoke_mp4 = f'"{OUTPUT_FILES["karaoke_mp4"]}"'
+    env_mov_input = '-i "end.mov"'
+    ffmpeg_filter = '-filter_complex "[concat]"'
+
+    finaliser_with_aac.encode_lossless_720p_mp4(
+        quoted_title_mov, quoted_karaoke_mp4, env_mov_input, ffmpeg_filter, OUTPUT_FILES["final_karaoke_lossless_720p_mp4"]
+    )
+
+    expected_gpu_cmd = (
+        f"{finaliser_with_aac.ffmpeg_base_command}  -i {quoted_title_mov} "
+        f" -i {quoted_karaoke_mp4} {env_mov_input} "
+        f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 '
+        f'-preset p4 -cq 23 -b:v 2000k -c:a flac {finaliser_with_aac.mp4_flags} "{OUTPUT_FILES["final_karaoke_lossless_720p_mp4"]}"'
+    )
+    expected_cpu_cmd = (
+        f"{finaliser_with_aac.ffmpeg_base_command} -i {quoted_title_mov} -i {quoted_karaoke_mp4} {env_mov_input} "
+        f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 -b:v 2000k -preset medium -tune animation '
+        f'-c:a flac {finaliser_with_aac.mp4_flags} "{OUTPUT_FILES["final_karaoke_lossless_720p_mp4"]}"'
+    )
+    mock_execute_fallback.assert_called_once_with(expected_gpu_cmd, expected_cpu_cmd, "Creating 720p MP4 version with lossless audio")
 
 @patch.object(KaraokeFinalise, 'execute_command')
 def test_encode_lossy_mp4_aac(mock_execute, finaliser_with_aac):
@@ -314,8 +364,8 @@ def test_remux_and_encode_all_steps_mov_input(
     mock_prepare_filter.assert_called_once_with(input_files_with_end)
 
     # Explicitly define expected quoted paths based on mocks
-    expected_quoted_title_mov = f"'/abs/path/{INPUT_FILES['title_mov']}'"
-    expected_quoted_karaoke_mp4 = f"'/abs/path/{OUTPUT_FILES['karaoke_mp4']}'"
+    expected_quoted_title_mov = f'"/abs/path/{INPUT_FILES["title_mov"]}"'
+    expected_quoted_karaoke_mp4 = f'"/abs/path/{OUTPUT_FILES["karaoke_mp4"]}"'
 
     mock_encode_lossless.assert_called_once_with(
         expected_quoted_title_mov,
@@ -360,6 +410,41 @@ def test_remux_and_encode_mp4_input(
     mock_remux.assert_called_once()
     mock_convert_mov.assert_not_called() # Should skip conversion
     mock_remove.assert_not_called() # Should not delete input MP4
+
+@patch('os.path.isfile', return_value=False)
+@patch('os.remove')
+@patch.object(KaraokeFinalise, 'remux_with_instrumental')
+@patch.object(KaraokeFinalise, 'convert_mov_to_mp4')
+@patch.object(KaraokeFinalise, 'prepare_concat_filter')
+@patch.object(KaraokeFinalise, 'encode_lossless_720p_mp4')
+@patch.object(KaraokeFinalise, 'encode_lossless_mp4')
+@patch.object(KaraokeFinalise, 'encode_lossy_mp4')
+@patch.object(KaraokeFinalise, 'encode_lossless_mkv')
+@patch.object(KaraokeFinalise, 'encode_720p_version')
+@patch.object(KaraokeFinalise, 'prompt_user_bool', return_value=True)
+def test_remux_and_encode_make_one_video(
+    mock_prompt_bool, mock_encode_720p, mock_encode_mkv, mock_encode_lossy,
+    mock_encode_lossless, mock_encode_lossless_720p, mock_prepare_filter, mock_convert_mov, mock_remux,
+    mock_remove, mock_isfile, finaliser_with_aac):
+    """When make_one_video is set, only the 720p lossless-audio encode should run."""
+    finaliser_with_aac.make_one_video = True
+    finaliser_with_aac.non_interactive = True
+
+    mock_prepare_filter.return_value = ("", '-filter_complex "[scaled]"')
+    with_vocals_mp4 = f"{BASE_NAME} (With Vocals).mp4"
+
+    finaliser_with_aac.remux_and_encode_output_video_files(with_vocals_mp4, INPUT_FILES, OUTPUT_FILES)
+
+    mock_isfile.assert_any_call(OUTPUT_FILES["final_karaoke_lossless_720p_mp4"])
+    mock_prepare_filter.assert_called_once_with(INPUT_FILES, scale_to_720p=True)
+    mock_encode_lossless_720p.assert_called_once()
+    assert mock_encode_lossless_720p.call_args.args[-1] == OUTPUT_FILES["final_karaoke_lossless_720p_mp4"]
+
+    # None of the 4K/MKV/lossy-720p variants should be encoded
+    mock_encode_lossless.assert_not_called()
+    mock_encode_lossy.assert_not_called()
+    mock_encode_mkv.assert_not_called()
+    mock_encode_720p.assert_not_called()
 
 @patch('os.path.isfile', return_value=True) # Files exist
 @patch.object(KaraokeFinalise, 'remux_with_instrumental')

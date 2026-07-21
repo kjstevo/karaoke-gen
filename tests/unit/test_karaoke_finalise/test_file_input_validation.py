@@ -115,6 +115,7 @@ def test_prepare_output_filenames(basic_finaliser):
         "final_karaoke_lossless_mkv": " (Final Karaoke Lossless 4k).mkv",
         "final_karaoke_lossy_mp4": " (Final Karaoke Lossy 4k).mp4",
         "final_karaoke_lossy_720p_mp4": " (Final Karaoke Lossy 720p).mp4",
+        "final_karaoke_lossless_720p_mp4": " (Karaoke lossless 720 final).mp4",
         "final_karaoke_cdg_zip": " (Final Karaoke CDG).zip", # Enabled
         "karaoke_txt": " (Karaoke).txt", # Enabled
         "final_karaoke_txt_zip": " (Final Karaoke TXT).zip", # Enabled

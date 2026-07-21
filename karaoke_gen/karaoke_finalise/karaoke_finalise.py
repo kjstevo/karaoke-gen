@@ -50,7 +50,7 @@ class KaraokeFinalise:
         selected_instrumental_file=None,  # Add support for pre-selected instrumental file
         countdown_padding_seconds=None,  # Padding applied to vocals; instrumental must match
         no_video=False,  # Skip video encoding and distribution
-        make_one_video=False,  # Output only the lossless 4K MP4, skip lossy/MKV/720p variants
+        make_one_video=False,  # Output only a single 720p MP4 with lossless FLAC audio, skip the 4K/MKV/lossy variants
         is_duet=False,  # Multi-singer / duet rendering for CDG
         duet_corrections_json_path=None,  # Local path to corrections JSON with per-segment singer tags
     ):
@@ -137,6 +137,7 @@ class KaraokeFinalise:
             "final_karaoke_lossless_mkv": " (Final Karaoke Lossless 4k).mkv",
             "final_karaoke_lossy_mp4": " (Final Karaoke Lossy 4k).mp4",
             "final_karaoke_lossy_720p_mp4": " (Final Karaoke Lossy 720p).mp4",
+            "final_karaoke_lossless_720p_mp4": " (Karaoke lossless 720 final).mp4",
             "final_karaoke_cdg_zip": " (Final Karaoke CDG).zip",
             "final_karaoke_txt_zip": " (Final Karaoke TXT).zip",
         }
@@ -212,6 +213,7 @@ class KaraokeFinalise:
             "final_karaoke_lossless_mkv": f"{base_name}{self.suffixes['final_karaoke_lossless_mkv']}",
             "final_karaoke_lossy_mp4": f"{base_name}{self.suffixes['final_karaoke_lossy_mp4']}",
             "final_karaoke_lossy_720p_mp4": f"{base_name}{self.suffixes['final_karaoke_lossy_720p_mp4']}",
+            "final_karaoke_lossless_720p_mp4": f"{base_name}{self.suffixes['final_karaoke_lossless_720p_mp4']}",
         }
 
         if self.enable_cdg:
@@ -909,6 +911,23 @@ class KaraokeFinalise:
 
         self.execute_command_with_fallback(gpu_command, cpu_command, "Creating MP4 version with lossless audio")
 
+    def encode_lossless_720p_mp4(self, title_mov_file, karaoke_mp4_file, env_mov_input, ffmpeg_filter, output_file):
+        """Create a 720p MP4 with lossless FLAC audio in a single pass (used by --make1video)."""
+        gpu_command = (
+            f"{self.ffmpeg_base_command} {self.hwaccel_decode_flags} -i {title_mov_file} "
+            f"{self.hwaccel_decode_flags} -i {karaoke_mp4_file} {env_mov_input} "
+            f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v {self.video_encoder} '
+            f'{self.get_nvenc_quality_settings("medium")} -b:v 2000k -c:a flac {self.mp4_flags} "{output_file}"'
+        )
+
+        cpu_command = (
+            f"{self.ffmpeg_base_command} -i {title_mov_file} -i {karaoke_mp4_file} {env_mov_input} "
+            f'{ffmpeg_filter} -map "[outv]" -map "[outa]" -c:v libx264 -b:v 2000k -preset medium -tune animation '
+            f'-c:a flac {self.mp4_flags} "{output_file}"'
+        )
+
+        self.execute_command_with_fallback(gpu_command, cpu_command, "Creating 720p MP4 version with lossless audio")
+
     def encode_lossy_mp4(self, input_file, output_file):
         """Create MP4 with AAC audio (lossy, for wider compatibility)"""
         # This is primarily an audio re-encoding operation, video is copied
@@ -948,31 +967,49 @@ class KaraokeFinalise:
         
         self.execute_command_with_fallback(gpu_command, cpu_command, "Encoding 720p version of the final video")
 
-    def prepare_concat_filter(self, input_files):
-        """Prepare the concat filter and additional input for end credits if present"""
+    def prepare_concat_filter(self, input_files, scale_to_720p=False):
+        """Prepare the concat filter and additional input for end credits if present.
+
+        When scale_to_720p is True, a scale stage is appended after the concat so the
+        output video is produced at 1280x720 directly, without ever writing a full-resolution
+        intermediate file (used by --make1video).
+        """
         env_mov_input = ""
-        ffmpeg_filter = '-filter_complex "[0:v:0][0:a:0][1:v:0][1:a:0]concat=n=2:v=1:a=1[outv][outa]"'
+        concat_inputs = "[0:v:0][0:a:0][1:v:0][1:a:0]"
+        concat_n = 2
 
         if "end_mov" in input_files and os.path.isfile(input_files["end_mov"]):
             self.logger.info(f"Found end_mov file: {input_files['end_mov']}, including in final MP4")
             end_mov_file = f'"{os.path.abspath(input_files["end_mov"])}"'
             env_mov_input = f"-i {end_mov_file}"
-            ffmpeg_filter = '-filter_complex "[0:v:0][0:a:0][1:v:0][1:a:0][2:v:0][2:a:0]concat=n=3:v=1:a=1[outv][outa]"'
+            concat_inputs = "[0:v:0][0:a:0][1:v:0][1:a:0][2:v:0][2:a:0]"
+            concat_n = 3
+
+        if scale_to_720p:
+            filter_complex = (
+                f"{concat_inputs}concat=n={concat_n}:v=1:a=1[concatv][outa];"
+                f"[concatv]{self.scale_filter}=1280:720[outv]"
+            )
+        else:
+            filter_complex = f"{concat_inputs}concat=n={concat_n}:v=1:a=1[outv][outa]"
+
+        ffmpeg_filter = f'-filter_complex "{filter_complex}"'
 
         return env_mov_input, ffmpeg_filter
 
     def remux_and_encode_output_video_files(self, with_vocals_file, input_files, output_files):
         if self.make_one_video:
             total_steps = 3
-            self.logger.info(f"Remuxing and encoding output video files (lossless 4K MP4 only, ~5 minutes)...")
+            self.logger.info(f"Remuxing and encoding output video files (720p lossless-audio MP4 only, ~5 minutes)...")
         else:
             total_steps = 6
             self.logger.info(f"Remuxing and encoding output video files (4 formats, ~15-20 minutes total)...")
 
         # Check if output files already exist
-        existing_check_files = [output_files["final_karaoke_lossless_mp4"]]
-        if not self.make_one_video:
-            existing_check_files.append(output_files["final_karaoke_lossless_mkv"])
+        if self.make_one_video:
+            existing_check_files = [output_files["final_karaoke_lossless_720p_mp4"]]
+        else:
+            existing_check_files = [output_files["final_karaoke_lossless_mp4"], output_files["final_karaoke_lossless_mkv"]]
         if all(os.path.isfile(f) for f in existing_check_files):
             if not self.prompt_user_bool(
                 f"Found existing Final Karaoke output files. Overwrite (y) or skip (n)?",
@@ -1000,13 +1037,21 @@ class KaraokeFinalise:
         title_mov_file = f'"{os.path.abspath(input_files["title_mov"])}"'
         karaoke_mp4_file = f'"{os.path.abspath(output_files["karaoke_mp4"])}"'
 
-        # Prepare concat filter for combining videos
-        env_mov_input, ffmpeg_filter = self.prepare_concat_filter(input_files)
+        if self.make_one_video:
+            # Prepare concat filter that scales directly to 720p so the 4K master is never written to disk
+            env_mov_input, ffmpeg_filter = self.prepare_concat_filter(input_files, scale_to_720p=True)
 
-        self.logger.info(f"[Step 3/{total_steps}] Encoding lossless 4K MP4 (title + karaoke + end, ~5 minutes)...")
-        self.encode_lossless_mp4(title_mov_file, karaoke_mp4_file, env_mov_input, ffmpeg_filter, output_files["final_karaoke_lossless_mp4"])
+            self.logger.info(f"[Step 3/{total_steps}] Encoding 720p MP4 with lossless audio (title + karaoke + end, ~5 minutes)...")
+            self.encode_lossless_720p_mp4(
+                title_mov_file, karaoke_mp4_file, env_mov_input, ffmpeg_filter, output_files["final_karaoke_lossless_720p_mp4"]
+            )
+        else:
+            # Prepare concat filter for combining videos
+            env_mov_input, ffmpeg_filter = self.prepare_concat_filter(input_files)
 
-        if not self.make_one_video:
+            self.logger.info(f"[Step 3/{total_steps}] Encoding lossless 4K MP4 (title + karaoke + end, ~5 minutes)...")
+            self.encode_lossless_mp4(title_mov_file, karaoke_mp4_file, env_mov_input, ffmpeg_filter, output_files["final_karaoke_lossless_mp4"])
+
             self.logger.info(f"[Step 4/{total_steps}] Encoding lossy 4K MP4 with AAC audio (~1 minute)...")
             self.encode_lossy_mp4(output_files["final_karaoke_lossless_mp4"], output_files["final_karaoke_lossy_mp4"])
 
@@ -1021,7 +1066,7 @@ class KaraokeFinalise:
             if self.make_one_video:
                 confirmation_msg = (
                     f"Final video file created:\n"
-                    f"- Lossless 4K MP4: {output_files['final_karaoke_lossless_mp4']}\n"
+                    f"- Lossless 720p MP4: {output_files['final_karaoke_lossless_720p_mp4']}\n"
                     f"Please check it! Proceed?"
                 )
             else:
@@ -1973,10 +2018,10 @@ class KaraokeFinalise:
             result.update({
                 "video_with_vocals": output_files["with_vocals_mp4"],
                 "video_with_instrumental": output_files["karaoke_mp4"],
-                "final_video": output_files["final_karaoke_lossless_mp4"],
-                "final_video_mkv": output_files["final_karaoke_lossless_mkv"],
-                "final_video_lossy": output_files["final_karaoke_lossy_mp4"],
-                "final_video_720p": output_files["final_karaoke_lossy_720p_mp4"],
+                "final_video": output_files["final_karaoke_lossless_720p_mp4"] if self.make_one_video else output_files["final_karaoke_lossless_mp4"],
+                "final_video_mkv": None if self.make_one_video else output_files["final_karaoke_lossless_mkv"],
+                "final_video_lossy": None if self.make_one_video else output_files["final_karaoke_lossy_mp4"],
+                "final_video_720p": None if self.make_one_video else output_files["final_karaoke_lossy_720p_mp4"],
                 "youtube_url": self.youtube_url,
                 "brand_code": self.brand_code,
                 "new_brand_code_dir_path": self.new_brand_code_dir_path,
