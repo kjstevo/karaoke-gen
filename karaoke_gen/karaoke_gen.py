@@ -28,6 +28,7 @@ from .config import (
 )
 from .metadata import extract_info_for_online_media, parse_track_metadata
 from .file_handler import FileHandler
+from .audio_silence_trimmer import trim_silence
 from .audio_processor import AudioProcessor
 from .lyrics_processor import LyricsProcessor
 from .video_generator import VideoGenerator
@@ -484,6 +485,12 @@ class KaraokePrep:
                     # Delegate to FileHandler
                     processed_track["input_media"] = self.file_handler.copy_input_media(self.input_media, output_filename_no_extension)
 
+                    # Trim leading/trailing silence in place before anything downstream (WAV
+                    # conversion, lyrics alignment, separation, rendering) reads this file -- see
+                    # audio_silence_trimmer's own module docstring for why this must happen once,
+                    # up front, rather than on a copy fed to only one stage.
+                    trim_silence(processed_track["input_media"], self.logger)
+
                     self.logger.info("Converting input media to WAV for audio processing...")
                     # Delegate to FileHandler
                     processed_track["input_audio_wav"] = self.file_handler.convert_to_wav(processed_track["input_media"], output_filename_no_extension)
@@ -544,6 +551,12 @@ class KaraokePrep:
                         )
 
                         self.logger.info(f"Audio downloaded from {fetch_result.provider}: {processed_track['input_media']}")
+
+                        # Trim leading/trailing silence in place before anything downstream (WAV
+                        # conversion, lyrics alignment, separation, rendering) reads this file --
+                        # see audio_silence_trimmer's own module docstring for why this must
+                        # happen once, up front, rather than on a copy fed to only one stage.
+                        trim_silence(processed_track["input_media"], self.logger)
 
                         # Convert to WAV for audio processing
                         self.logger.info("Converting downloaded audio to WAV for processing...")
